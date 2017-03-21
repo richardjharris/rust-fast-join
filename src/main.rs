@@ -1,7 +1,27 @@
 #[macro_use]
 extern crate clap;
-use std::{io, fs};
+use std::{io, fs, mem};
 use std::io::{BufReader, BufRead};
+
+// TODO:
+//   -j, -1 x, -2 x, -a/-v 1,2 options: compatible with join
+//   custom delimiter -d
+//   -e empty field (missing)
+//   --empty-left, --empty-right: missing for joins
+//   -i (ignore case) ?
+//   -o format: '0,1.1,2.2'
+//   -H headers (?) and -o 'Hoster Parent',...
+//   --check-order ?
+//   Multiple join fields support
+//
+//   List of pros and cons:
+//     * Fixed memory usage
+//     * Handles cases where one file has a huge number of rows mapping to a single row
+//     * New features like multiple join fields etc
+//   Cons:
+//    * Doesn't handle collation other than simple byte comparison
+//    * Doesn't handle (or detect) cross joins properly
+//    * Doesn't detect incorrect ordering of files
 
 struct JoinFile {
     eof: bool,
@@ -20,12 +40,12 @@ fn main() {
     join(&mut left, &mut right);
 }
 
-fn join(mut left: &mut JoinFile, mut right: &mut JoinFile) {
+fn join(left: &mut JoinFile, right: &mut JoinFile) {
     // We refill twice to load a current and next record
-    if !(refill_first(&mut left) && refill(&mut left)) {
+    if !(refill_first(left) && refill(left)) {
         panic!("No input found on left side");
     }
-    if !(refill_first(&mut right) && refill(&mut right)) {
+    if !(refill_first(right) && refill(right)) {
         panic!("No input found on right side");
     }
 
@@ -33,47 +53,47 @@ fn join(mut left: &mut JoinFile, mut right: &mut JoinFile) {
     let mut todo = true;
     while todo {
         if left.key == right.key {
-            print_join(&mut left, Some(&mut right));
-            todo = smart_refill(&mut left, &mut right);
+            print_join(left, Some(right));
+            todo = smart_refill(left, right);
         }
         else if left.key < right.key {
             if left.all && !left.printed {
-                print_join(&mut left, None);
+                print_join(left, None);
             }
-            todo = refill(&mut left);
+            todo = refill(left);
         }
         else {
             if right.all && !right.printed {
-                print_join(&mut right, None);
+                print_join(right, None);
             }
-            todo = refill(&mut right);
+            todo = refill(right);
         }
     }
 
     // Print the last if all (normally this would happen on refill)
     if left.all && !left.printed {
-        print_join(&mut left, None);
+        print_join(left, None);
     }
     if right.all && !right.printed {
-        print_join(&mut right, None);
+        print_join(right, None);
     }
 
     // Finish off the remaining unpairable lines
     if !left.eof && left.all {
-        finish(&mut left);
+        finish(left);
     }
     else if !right.eof && right.all {
-        finish(&mut right);
+        finish(right);
     }
 }
 
-fn finish(mut file: &mut JoinFile) {
-    while refill(&mut file) {
-        print_join(&mut file, None);
+fn finish(file: &mut JoinFile) {
+    while refill(file) {
+        print_join(file, None);
     }
 }
 
-fn print_join(mut file: &mut JoinFile, file2: Option<&mut JoinFile>) {
+fn print_join(file: &mut JoinFile, file2: Option<&mut JoinFile>) {
     print!("{}\t{}", file.key, file.row);
     file.printed = true;
 
@@ -85,16 +105,19 @@ fn print_join(mut file: &mut JoinFile, file2: Option<&mut JoinFile>) {
 }
 
 #[inline(always)]
-fn refill_first(mut file: &mut JoinFile) -> bool {
-    return _refill(&mut file, true);
+fn refill_first(file: &mut JoinFile) -> bool {
+    return _refill(file, true);
 }
 #[inline(always)]
-fn refill(mut file: &mut JoinFile) -> bool {
-    return _refill(&mut file, false);
+fn refill(file: &mut JoinFile) -> bool {
+    return _refill(file, false);
 }
 
 // Refill an input file
-fn _refill(mut file: &mut JoinFile, first: bool) -> bool {
+fn _refill(file: &mut JoinFile, first: bool) -> bool {
+    // Can use this code:
+    // let old_v = mem::replace(&mut v, new_value)
+
     // First filling won't have next values yet
     if !first {
         if file.eof {
@@ -129,21 +152,21 @@ fn _refill(mut file: &mut JoinFile, first: bool) -> bool {
 }
 
 // Both left and right match, decide which one to refill first
-fn smart_refill(mut left: &mut JoinFile, mut right: &mut JoinFile) -> bool {
+fn smart_refill(left: &mut JoinFile, right: &mut JoinFile) -> bool {
     if left.eof {
-        return refill(&mut right);
+        return refill(right);
     }
     else if right.eof {
-        return refill(&mut left);
+        return refill(left);
     }
     else if left.next_key == right.next_key {
-        return refill(&mut left) && refill(&mut right);
+        return refill(left) && refill(right);
     }
     else if left.next_key < right.next_key {
-        return refill(&mut left);
+        return refill(left);
     }
     else {
-        return refill(&mut right);
+        return refill(right);
     }
 }
 
