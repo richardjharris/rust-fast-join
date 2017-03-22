@@ -41,11 +41,10 @@ fn main() {
 }
 
 fn join(left: &mut JoinFile, right: &mut JoinFile) {
-    // We refill twice to load a current and next record
-    if !(refill_first(left) && refill(left)) {
+    if !first_fill(left) {
         panic!("No input found on left side");
     }
-    if !(refill_first(right) && refill(right)) {
+    if !first_fill(right) {
         panic!("No input found on right side");
     }
 
@@ -104,51 +103,49 @@ fn print_join(file: &mut JoinFile, file2: Option<&mut JoinFile>) {
     println!("");
 }
 
-#[inline(always)]
-fn refill_first(file: &mut JoinFile) -> bool {
-    return _refill(file, true);
-}
-#[inline(always)]
-fn refill(file: &mut JoinFile) -> bool {
-    return _refill(file, false);
-}
-
-// Refill an input file
-fn _refill(file: &mut JoinFile, first: bool) -> bool {
-    // Can use this code:
-    // let old_v = mem::replace(&mut v, new_value)
-
-    // First filling won't have next values yet
-    if !first {
-        if file.eof {
-            return false;
-        }
-        // XXX can this be improved? e.g. str references
-        file.row = file.next_row.clone();
-        file.key = file.next_key.clone();
-        file.printed = false;
+// Read first two lines into row/next_row. Returns false on EOF.
+fn first_fill(file: &mut JoinFile) -> bool {
+    let bytes_read = file.reader.read_line(&mut file.next_row).expect("read error");
+    if bytes_read == 0 {
+        file.eof = true;
+        return false;  // shouldn't happen for first fill
     }
+    file.next_row.pop();  // remove newline
+    file.next_key = get_field(&file.next_row, file.field).into();
 
+    // Refill again to move these to .row and .key, and read in another line
+    return refill(file);
+}
+
+fn refill(file: &mut JoinFile) -> bool {
+    if file.eof {
+        return false;  // no more rows to load (incl. next_row)
+    }
+    file.row = file.next_row.clone();
+    file.key = file.next_key.clone();
+    file.printed = false;
+    
     file.next_row.clear();
 
     let bytes_read = file.reader.read_line(&mut file.next_row).expect("read error");
     if bytes_read == 0 {
         file.eof = true;
-        return !first;
+        return true;  // caller can still read the current row. next call will return false
     }
 
-    // Remove newline XXX needs to check first
-    file.next_row.pop();
+    file.next_row.pop();  // remove newline
 
-    // XXX todo: split, store key field and build a string out of the rest
-    // // OR just store the split version?
-    // Set next_key
-    file.next_key = String::from(match file.next_row.split("\t").nth(file.field - 1) {
-        Some(s) => s,
-        None => "",
-    });
+    file.next_key = get_field(&file.next_row, file.field).into();
 
     return true;
+}
+
+// Fetches 1-indexed field from row
+fn get_field<'a>(string: &'a String, field: usize) -> &'a str {
+    return match string.split("\t").nth(field - 1) {
+        Some(s) => s,
+        None => "",
+    };
 }
 
 // Both left and right match, decide which one to refill first
