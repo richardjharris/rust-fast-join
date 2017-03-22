@@ -28,6 +28,8 @@ use std::io::{BufReader, BufRead};
 //    * Doesn't handle collation other than simple byte comparison
 //    * Doesn't handle (or detect) cross joins properly
 //    * Doesn't detect incorrect ordering of files
+//
+// JoinFile::new() should not require clap args, probably
 
 struct JoinFile {
     eof: bool,
@@ -41,16 +43,99 @@ struct JoinFile {
     next_row: String,
 }
 
+impl JoinFile {
+    fn new(args: &clap::ArgMatches, filename_field: &str, field_field: &str, all_field: &str) -> JoinFile {
+        let filename = args.value_of(filename_field).unwrap();
+        
+        let reader: Box<io::Read> = match filename {
+            "-" => Box::new(io::stdin()),
+            _   => Box::new(fs::File::open(filename).expect("Unable to open file"))
+        };
+
+        return JoinFile {
+            field: value_t!(args, field_field, usize).unwrap_or(1),
+            all: args.is_present(all_field),
+            reader: BufReader::new(reader),
+            eof: false,
+            printed: false,
+            row: String::new(),
+            key: String::new(),
+            next_key: String::new(),
+            next_row: String::new(),
+        };
+    }
+
+    // Read first two lines into row/next_row. Returns false if file is empty.
+    fn first_fill(&mut self) -> bool {
+        if self.read_line() {
+            // Refill again to move these to .row and .key, and read in another line
+            self.refill()
+        }
+        else {
+            // Shouldn't happen for first fill
+            false
+        }
+    }
+
+    // Move next_row into row and read a new line. Returns false on EOF.
+    fn refill(&mut self) -> bool {
+        if self.eof {
+            return false;
+        }
+        self.row = self.next_row.clone();
+        self.key = self.next_key.clone();
+        self.printed = false;
+
+        // This sets .eof = true, which will cause the next call to fail.
+        // XXX we actually want this to call std::mem::replace and overwrite next_row/next_key
+        // with new values, return the old ones which we can then assign to row/key.
+        //
+        // let mut v: Vec<i32> = vec![1,2]
+        // let old_v = mem::replace(&mut v, vec![3,4,5])
+        self.read_line();
+        return true;
+    }
+
+    // Read a line into next_row/next_key, return false on EOF
+    fn read_line(&mut self) -> bool {
+        self.next_row.clear();
+        let bytes_read = self.reader.read_line(&mut self.next_row).expect("read error");
+        if bytes_read == 0 {
+            self.eof = true;
+            false
+        }
+        else {
+            self.next_row.pop();  // remove newline
+            self.next_key = JoinFile::get_field(&self.next_row, self.field).into();
+            true
+        }
+    }
+
+    fn finish(&mut self) {
+        while self.refill() {
+            print_join(self, None);
+        }
+    }
+
+    // Fetches 1-indexed field from row
+    fn get_field<'a>(string: &'a String, field: usize) -> &'a str {
+        match string.split("\t").nth(field - 1) {
+            Some(s) => s,
+            None => "",
+        }
+    }
+} // impl JoinFile 
+
 fn main() {
     let (mut left, mut right) = setup();
     join(&mut left, &mut right);
 }
 
 fn join(left: &mut JoinFile, right: &mut JoinFile) {
-    if !first_fill(left) {
+    if !left.first_fill() {
         panic!("No input found on left side");
     }
-    if !first_fill(right) {
+    if !right.first_fill() {
         panic!("No input found on right side");
     }
 
@@ -65,13 +150,13 @@ fn join(left: &mut JoinFile, right: &mut JoinFile) {
             if left.all && !left.printed {
                 print_join(left, None);
             }
-            todo = refill(left);
+            todo = left.refill();
         }
         else {
             if right.all && !right.printed {
                 print_join(right, None);
             }
-            todo = refill(right);
+            todo = right.refill();
         }
     }
 
@@ -85,16 +170,10 @@ fn join(left: &mut JoinFile, right: &mut JoinFile) {
 
     // Finish off the remaining unpairable lines
     if !left.eof && left.all {
-        finish(left);
+        left.finish();
     }
     else if !right.eof && right.all {
-        finish(right);
-    }
-}
-
-fn finish(file: &mut JoinFile) {
-    while refill(file) {
-        print_join(file, None);
+        right.finish();
     }
 }
 
@@ -109,77 +188,22 @@ fn print_join(file: &mut JoinFile, file2: Option<&mut JoinFile>) {
     println!("");
 }
 
-// Read first two lines into row/next_row. Returns false if file is empty.
-fn first_fill(file: &mut JoinFile) -> bool {
-
-    if read_line(file) {
-        // Refill again to move these to .row and .key, and read in another line
-        refill(file)
-    }
-    else {
-        // Shouldn't happen for first fill
-        false
-    }
-}
-
-// Move next_row into row and read a new line. Returns false on EOF.
-fn refill(file: &mut JoinFile) -> bool {
-    if file.eof {
-        return false;
-    }
-    file.row = file.next_row.clone();
-    file.key = file.next_key.clone();
-    file.printed = false;
-
-    // This sets .eof = true, which will cause the next call to fail.
-    // XXX we actually want this to call std::mem::replace and overwrite next_row/next_key
-    // with new values, return the old ones which we can then assign to row/key.
-    //
-    // let mut v: Vec<i32> = vec![1,2]
-    // let old_v = mem::replace(&mut v, vec![3,4,5])
-    read_line(file);
-    return true;
-}
-
-// Read a line into next_row/next_key, return false on EOF
-fn read_line(file: &mut JoinFile) -> bool {
-    file.next_row.clear();
-    let bytes_read = file.reader.read_line(&mut file.next_row).expect("read error");
-    if bytes_read == 0 {
-        file.eof = true;
-        false
-    }
-    else {
-        file.next_row.pop();  // remove newline
-        file.next_key = get_field(&file.next_row, file.field).into();
-        true
-    }
-}
-
-// Fetches 1-indexed field from row
-fn get_field<'a>(string: &'a String, field: usize) -> &'a str {
-    match string.split("\t").nth(field - 1) {
-        Some(s) => s,
-        None => "",
-    }
-}
-
 // Both left and right match, decide which one to refill first
 fn smart_refill(left: &mut JoinFile, right: &mut JoinFile) -> bool {
     if left.eof {
-        refill(right)
+        right.refill()
     }
     else if right.eof {
-        refill(left)
+        left.refill()
     }
     else if left.next_key == right.next_key {
-        refill(left) && refill(right)
+        left.refill() && right.refill()
     }
     else if left.next_key < right.next_key {
-        refill(left)
+        left.refill()
     }
     else {
-        refill(right)
+        right.refill()
     }
 }
 
@@ -196,29 +220,9 @@ fn setup() -> (JoinFile, JoinFile) {
         (@arg RIGHT: +required "Right file")
     ).get_matches();
 
-    let left = make_join_file(&args, "LEFT", "leftField", "leftAll");
-    let right = make_join_file(&args, "RIGHT", "rightField", "rightAll");
+    let left = JoinFile::new(&args, "LEFT", "leftField", "leftAll");
+    let right = JoinFile::new(&args, "RIGHT", "rightField", "rightAll");
 
     (left, right)
 }
 
-fn make_join_file(args: &clap::ArgMatches, filename_field: &str, field_field: &str, all_field: &str) -> JoinFile {
-    let filename = args.value_of(filename_field).unwrap();
-    
-    let reader: Box<io::Read> = match filename {
-        "-" => Box::new(io::stdin()),
-        _   => Box::new(fs::File::open(filename).expect("Unable to open file"))
-    };
-
-    return JoinFile {
-        field: value_t!(args, field_field, usize).unwrap_or(1),
-        all: args.is_present(all_field),
-        reader: BufReader::new(reader),
-        eof: false,
-        printed: false,
-        row: String::new(),
-        key: String::new(),
-        next_key: String::new(),
-        next_row: String::new(),
-    };
-}
