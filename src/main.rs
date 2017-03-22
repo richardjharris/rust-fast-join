@@ -4,6 +4,12 @@ use std::{io, fs, mem};
 use std::io::{BufReader, BufRead};
 
 // TODO:
+//
+// Remove 'return's
+// Investigate owning_ref
+// std::mem::replace stuff
+// convert some JoinFile stuff into methods
+//
 //   -j, -1 x, -2 x, -a/-v 1,2 options: compatible with join
 //   custom delimiter -d
 //   -e empty field (missing)
@@ -106,13 +112,14 @@ fn print_join(file: &mut JoinFile, file2: Option<&mut JoinFile>) {
 // Read first two lines into row/next_row. Returns false if file is empty.
 fn first_fill(file: &mut JoinFile) -> bool {
 
-    if !read_line(file) {
-        // Shouldn't happen for first fill
-        return false;
+    if read_line(file) {
+        // Refill again to move these to .row and .key, and read in another line
+        refill(file)
     }
-
-    // Refill again to move these to .row and .key, and read in another line
-    return refill(file);
+    else {
+        // Shouldn't happen for first fill
+        false
+    }
 }
 
 // Move next_row into row and read a new line. Returns false on EOF.
@@ -125,6 +132,11 @@ fn refill(file: &mut JoinFile) -> bool {
     file.printed = false;
 
     // This sets .eof = true, which will cause the next call to fail.
+    // XXX we actually want this to call std::mem::replace and overwrite next_row/next_key
+    // with new values, return the old ones which we can then assign to row/key.
+    //
+    // let mut v: Vec<i32> = vec![1,2]
+    // let old_v = mem::replace(&mut v, vec![3,4,5])
     read_line(file);
     return true;
 }
@@ -135,39 +147,39 @@ fn read_line(file: &mut JoinFile) -> bool {
     let bytes_read = file.reader.read_line(&mut file.next_row).expect("read error");
     if bytes_read == 0 {
         file.eof = true;
-        return false;
+        false
     }
     else {
         file.next_row.pop();  // remove newline
         file.next_key = get_field(&file.next_row, file.field).into();
-        return true;
+        true
     }
 }
 
 // Fetches 1-indexed field from row
 fn get_field<'a>(string: &'a String, field: usize) -> &'a str {
-    return match string.split("\t").nth(field - 1) {
+    match string.split("\t").nth(field - 1) {
         Some(s) => s,
         None => "",
-    };
+    }
 }
 
 // Both left and right match, decide which one to refill first
 fn smart_refill(left: &mut JoinFile, right: &mut JoinFile) -> bool {
     if left.eof {
-        return refill(right);
+        refill(right)
     }
     else if right.eof {
-        return refill(left);
+        refill(left)
     }
     else if left.next_key == right.next_key {
-        return refill(left) && refill(right);
+        refill(left) && refill(right)
     }
     else if left.next_key < right.next_key {
-        return refill(left);
+        refill(left)
     }
     else {
-        return refill(right);
+        refill(right)
     }
 }
 
@@ -187,7 +199,7 @@ fn setup() -> (JoinFile, JoinFile) {
     let left = make_join_file(&args, "LEFT", "leftField", "leftAll");
     let right = make_join_file(&args, "RIGHT", "rightField", "rightAll");
 
-    return (left, right)
+    (left, right)
 }
 
 fn make_join_file(args: &clap::ArgMatches, filename_field: &str, field_field: &str, all_field: &str) -> JoinFile {
