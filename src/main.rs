@@ -103,41 +103,45 @@ fn print_join(file: &mut JoinFile, file2: Option<&mut JoinFile>) {
     println!("");
 }
 
-// Read first two lines into row/next_row. Returns false on EOF.
+// Read first two lines into row/next_row. Returns false if file is empty.
 fn first_fill(file: &mut JoinFile) -> bool {
-    let bytes_read = file.reader.read_line(&mut file.next_row).expect("read error");
-    if bytes_read == 0 {
-        file.eof = true;
-        return false;  // shouldn't happen for first fill
+
+    if !read_line(file) {
+        // Shouldn't happen for first fill
+        return false;
     }
-    file.next_row.pop();  // remove newline
-    file.next_key = get_field(&file.next_row, file.field).into();
 
     // Refill again to move these to .row and .key, and read in another line
     return refill(file);
 }
 
+// Move next_row into row and read a new line. Returns false on EOF.
 fn refill(file: &mut JoinFile) -> bool {
     if file.eof {
-        return false;  // no more rows to load (incl. next_row)
+        return false;
     }
     file.row = file.next_row.clone();
     file.key = file.next_key.clone();
     file.printed = false;
-    
-    file.next_row.clear();
 
+    // This sets .eof = true, which will cause the next call to fail.
+    read_line(file);
+    return true;
+}
+
+// Read a line into next_row/next_key, return false on EOF
+fn read_line(file: &mut JoinFile) -> bool {
+    file.next_row.clear();
     let bytes_read = file.reader.read_line(&mut file.next_row).expect("read error");
     if bytes_read == 0 {
         file.eof = true;
-        return true;  // caller can still read the current row. next call will return false
+        return false;
     }
-
-    file.next_row.pop();  // remove newline
-
-    file.next_key = get_field(&file.next_row, file.field).into();
-
-    return true;
+    else {
+        file.next_row.pop();  // remove newline
+        file.next_key = get_field(&file.next_row, file.field).into();
+        return true;
+    }
 }
 
 // Fetches 1-indexed field from row
