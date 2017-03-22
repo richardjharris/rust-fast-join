@@ -44,17 +44,15 @@ struct JoinFile {
 }
 
 impl JoinFile {
-    fn new(args: &clap::ArgMatches, filename_field: &str, field_field: &str, all_field: &str) -> JoinFile {
-        let filename = args.value_of(filename_field).unwrap();
-        
+    fn new(filename: &str, field: usize, all: bool) -> JoinFile {
         let reader: Box<io::Read> = match filename {
             "-" => Box::new(io::stdin()),
             _   => Box::new(fs::File::open(filename).expect("Unable to open file"))
         };
 
         return JoinFile {
-            field: value_t!(args, field_field, usize).unwrap_or(1),
-            all: args.is_present(all_field),
+            field: field,
+            all: all,
             reader: BufReader::new(reader),
             eof: false,
             printed: false,
@@ -216,13 +214,21 @@ fn setup() -> (JoinFile, JoinFile) {
         (@arg rightField: -r --right +takes_value "Select the field to index from the right file")
         (@arg leftAll: -L --("left-all") "Print all lines from the left file, even if they don't match")
         (@arg rightAll: -R --("right-all") "Print all lines from the right file, even if they don't match")
-        (@arg LEFT: +required "Left file")
-        (@arg RIGHT: +required "Right file")
+        (@arg leftFile: +required "Left file")
+        (@arg rightFile: +required "Right file")
     ).get_matches();
 
-    let left = JoinFile::new(&args, "LEFT", "leftField", "leftAll");
-    let right = JoinFile::new(&args, "RIGHT", "rightField", "rightAll");
+    let mut files = vec![];
+    let dirs = vec!["left".to_owned(), "right".to_owned()];
 
-    (left, right)
+    for dir in dirs {
+        let filename = args.value_of(dir.clone() + "File").unwrap();
+        let field = value_t!(args, dir.clone() + "Field", usize).unwrap_or(1);
+        let all = args.is_present(dir + "All");
+
+        files.push( JoinFile::new(filename, field, all) );
+    }
+    // return the two elements as a tuple
+    (files.remove(0), files.remove(0))
 }
 
