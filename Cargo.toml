@@ -1,0 +1,8 @@
+[package]
+name = "rjoin"
+version = "0.1.0"
+authors = ["Richard Harris <richardjharris@gmail.com>"]
+
+[dependencies]
+clap = "2"
+owning_ref = "0.3"
