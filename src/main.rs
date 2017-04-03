@@ -219,12 +219,12 @@ fn setup() -> (JoinFile, JoinFile) {
     ).get_matches();
 
     let mut files = vec![];
-    let dirs = vec!["left".to_owned(), "right".to_owned()];
+    let dirs = vec!["left", "right"];
 
     for dir in dirs {
-        let filename = args.value_of(dir.clone() + "File").unwrap();
-        let field = value_t!(args, dir.clone() + "Field", usize).unwrap_or(1);
-        let all = args.is_present(dir + "All");
+        let filename = args.value_of(format!("{}File", dir)).unwrap();
+        let field = value_t!(args, format!("{}Field", dir), usize).unwrap_or(1);
+        let all = args.is_present(format!("{}All", dir));
 
         files.push( JoinFile::new(filename, field, all) );
     }
