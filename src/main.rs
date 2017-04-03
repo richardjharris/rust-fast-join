@@ -3,13 +3,6 @@ extern crate clap;
 use std::{io, fs};
 use std::io::{BufReader, BufRead};
 
-// TODO:
-//
-// Remove 'return's
-// Investigate owning_ref
-// std::mem::replace stuff
-// convert some JoinFile stuff into methods
-//
 //   -j, -1 x, -2 x, -a/-v 1,2 options: compatible with join
 //   custom delimiter -d
 //   -e empty field (missing)
@@ -28,14 +21,14 @@ use std::io::{BufReader, BufRead};
 //    * Doesn't handle collation other than simple byte comparison
 //    * Doesn't handle (or detect) cross joins properly
 //    * Doesn't detect incorrect ordering of files
-//
-// JoinFile::new() should not require clap args, probably
+
+type LineIterator = Iterator<Item=io::Result<String>>;
 
 struct JoinFile {
     eof: bool,
     all: bool,
     field: usize,
-    reader: BufReader<Box<io::Read>>,
+    lines: Box<LineIterator>,
     row: String,
     key: String,
     printed: bool,
@@ -45,15 +38,17 @@ struct JoinFile {
 
 impl JoinFile {
     fn new(filename: &str, field: usize, all: bool) -> JoinFile {
-        let reader: Box<io::Read> = match filename {
+
+        let handle : Box<io::Read> = match filename {
             "-" => Box::new(io::stdin()),
-            _   => Box::new(fs::File::open(filename).expect("Unable to open file"))
+            _   => Box::new(fs::File::open(filename).expect("Unable to open file")),
         };
+        let iter = Box::new(BufReader::new(handle).lines());
 
         JoinFile {
             field: field,
             all: all,
-            reader: BufReader::new(reader),
+            lines: iter,
             eof: false,
             printed: false,
             row: String::new(),
@@ -96,16 +91,14 @@ impl JoinFile {
 
     // Read a line into next_row/next_key, return false on EOF
     fn read_line(&mut self) -> bool {
-        self.next_row.clear();
-        let bytes_read = self.reader.read_line(&mut self.next_row).expect("read error");
-        if bytes_read == 0 {
-            self.eof = true;
-            false
-        }
-        else {
-            self.next_row.pop();  // remove newline
+        if let Some(line) = self.lines.next() {
+            self.next_row = line.expect("read error");
             self.next_key = JoinFile::get_field(&self.next_row, self.field).into();
             true
+        }
+        else {
+            self.eof = true;
+            false
         }
     }
 
