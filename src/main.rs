@@ -1,6 +1,6 @@
 #[macro_use]
 extern crate clap;
-use std::{io, fs, mem};
+use std::{io, fs};
 use std::io::{BufReader, BufRead};
 
 // TODO:
@@ -50,7 +50,7 @@ impl JoinFile {
             _   => Box::new(fs::File::open(filename).expect("Unable to open file"))
         };
 
-        return JoinFile {
+        JoinFile {
             field: field,
             all: all,
             reader: BufReader::new(reader),
@@ -60,7 +60,7 @@ impl JoinFile {
             key: String::new(),
             next_key: String::new(),
             next_row: String::new(),
-        };
+        }
     }
 
     // Read first two lines into row/next_row. Returns false if file is empty.
@@ -91,7 +91,7 @@ impl JoinFile {
         // let mut v: Vec<i32> = vec![1,2]
         // let old_v = mem::replace(&mut v, vec![3,4,5])
         self.read_line();
-        return true;
+        true
     }
 
     // Read a line into next_row/next_key, return false on EOF
@@ -116,8 +116,8 @@ impl JoinFile {
     }
 
     // Fetches 1-indexed field from row
-    fn get_field<'a>(string: &'a String, field: usize) -> &'a str {
-        match string.split("\t").nth(field - 1) {
+    fn get_field(string: &str, field: usize) -> &str {
+        match string.split('\t').nth(field - 1) {
             Some(s) => s,
             None => "",
         }
@@ -179,14 +179,16 @@ fn print_join(file: &mut JoinFile, file2: Option<&mut JoinFile>) {
     print!("{}\t{}", file.key, file.row);
     file.printed = true;
 
-    match file2 {
-        Some(f) => { print!("\t{}", f.row); f.printed = true },
-        None => {},
-    };
+    if let Some(f) = file2 {
+        print!("\t{}", f.row);
+        f.printed = true;
+    }
+
     println!("");
 }
 
 // Both left and right match, decide which one to refill first
+#[cfg_attr(feature="cargo-clippy", allow(if_same_then_else))]
 fn smart_refill(left: &mut JoinFile, right: &mut JoinFile) -> bool {
     if left.eof {
         right.refill()
