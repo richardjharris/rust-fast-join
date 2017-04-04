@@ -26,12 +26,25 @@ type LineIterator = Iterator<Item=io::Result<String>>;
 pub struct JoinConfig {
     pub left: JoinFileConfig,
     pub right: JoinFileConfig,
+    pub output: OutputOrder,
 }
 
 pub struct JoinFileConfig {
     pub all: bool,
     pub field: usize,
     pub filename: String,
+}
+
+#[derive(Debug)]
+pub enum OutputField {
+    JoinField,
+    FileField { file: usize, field: usize },
+}
+
+#[derive(Debug)]
+pub enum OutputOrder {
+    Auto,
+    Explicit(Vec<OutputField>),
 }
 
 struct JoinFile {

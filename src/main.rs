@@ -5,7 +5,7 @@ use std::process;
 use std::error::Error;
 use std::io::Write;
 
-use rjoin::{JoinFileConfig, JoinConfig};
+use rjoin::{JoinFileConfig, JoinConfig, OutputField, OutputOrder};
 
 fn main() {
     let mut stderr = std::io::stderr();
@@ -32,6 +32,7 @@ fn setup() -> Result<JoinConfig, Box<Error>> {
         (@arg rightAll: -R --("right-all") "Print all lines from the right file, even if they don't match")
         (@arg leftFile: +required "Left file")
         (@arg rightFile: +required "Right file")
+        (@arg output: -o --("output") +takes_value "Specify output ordering of fields (join syntax)")
     ).get_matches();
 
     let mut files = vec![];
@@ -44,6 +45,41 @@ fn setup() -> Result<JoinConfig, Box<Error>> {
 
         files.push( JoinFileConfig { filename: filename.into(), field: field, all: all } );
     }
+
+    let output = args.value_of("output").unwrap_or("auto");
+    let output = parse_output_fields(output)?;
+
     // return the two elements as a tuple
-    Ok(JoinConfig { left: files.remove(0), right: files.remove(0) })
+    Ok(JoinConfig { left: files.remove(0), right: files.remove(0), output: output })
+}
+
+fn parse_output_fields(arg: &str) -> Result<OutputOrder, Box<Error>> {
+
+    if arg.trim() == "auto" {
+        return Ok(OutputOrder::Auto)
+    }
+
+    let mut fields : Vec<_> = vec![];
+
+    for item in arg.split(",") {
+        let item = item.trim();
+
+        if item == "0" {
+            fields.push(OutputField::JoinField);
+        }
+        else {
+            let nums : Vec<&str> = item.split(".").collect();
+            if nums.len() != 2 {
+                return Err("output field format must be '0' or 'x.y' where x is the file number and y is the field number".into());
+            }
+            let file = nums[0].parse()?;
+            if file != 1 && file != 2 {
+                return Err("output field file number must be either 1 or 2".into());
+            }
+            let field = nums[1].parse()?;
+            fields.push(OutputField::FileField { file, field });
+        }
+    }
+
+    Ok(OutputOrder::Explicit(fields))
 }
