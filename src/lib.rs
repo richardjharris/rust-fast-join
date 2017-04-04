@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::{io, fs};
 use std::io::{BufReader, BufRead};
 
@@ -22,11 +23,21 @@ use std::io::{BufReader, BufRead};
 
 type LineIterator = Iterator<Item=io::Result<String>>;
 
-pub struct JoinFile {
-    eof: bool,
-    all: bool,
-    field: usize,
+pub struct JoinConfig {
+    pub left: JoinFileConfig,
+    pub right: JoinFileConfig,
+}
+
+pub struct JoinFileConfig {
+    pub all: bool,
+    pub field: usize,
+    pub filename: String,
+}
+
+struct JoinFile {
+    config: JoinFileConfig,
     lines: Box<LineIterator>,
+    eof: bool,
     row: String,
     key: String,
     printed: bool,
@@ -35,25 +46,30 @@ pub struct JoinFile {
 }
 
 impl JoinFile {
-    pub fn new(filename: &str, field: usize, all: bool) -> JoinFile {
+    pub fn new(config: JoinFileConfig) -> Result<JoinFile, Box<Error>> {
 
-        let handle : Box<io::Read> = match filename {
-            "-" => Box::new(io::stdin()),
-            _   => Box::new(fs::File::open(filename).expect("Unable to open file")),
-        };
-        let iter = Box::new(BufReader::new(handle).lines());
-
-        JoinFile {
-            field: field,
-            all: all,
-            lines: iter,
-            eof: false,
-            printed: false,
-            row: String::new(),
-            key: String::new(),
-            next_key: String::new(),
-            next_row: String::new(),
+        fn open_file(filename: &str) -> Result<Box<io::Read>, Box<Error>> {
+            Ok(match filename {
+                "-" => Box::new(io::stdin()),
+                _   => Box::new(fs::File::open(filename)?),
+            })
         }
+
+        // This error should be passed out
+        open_file(&config.filename).map(|h| {
+            let iter = Box::new(BufReader::new(h).lines());
+
+            JoinFile {
+                config: config,
+                lines: iter,
+                eof: false,
+                printed: false,
+                row: String::new(),
+                key: String::new(),
+                next_key: String::new(),
+                next_row: String::new(),
+            }
+        })
     }
 
     // Read first two lines into row/next_row. Returns false if file is empty.
@@ -91,7 +107,7 @@ impl JoinFile {
     fn read_line(&mut self) -> bool {
         if let Some(line) = self.lines.next() {
             self.next_row = line.expect("read error");
-            self.next_key = JoinFile::get_field(&self.next_row, self.field).into();
+            self.next_key = JoinFile::get_field(&self.next_row, self.config.field).into();
             true
         }
         else {
@@ -115,7 +131,10 @@ impl JoinFile {
     }
 } // impl JoinFile 
 
-pub fn join(left: &mut JoinFile, right: &mut JoinFile) {
+pub fn join(config: JoinConfig) -> Result<(), Box<Error>> {
+    let left = &mut JoinFile::new(config.left)?;
+    let right = &mut JoinFile::new(config.right)?;
+
     if !left.first_fill() {
         panic!("No input found on left side");
     }
@@ -131,13 +150,13 @@ pub fn join(left: &mut JoinFile, right: &mut JoinFile) {
             todo = smart_refill(left, right);
         }
         else if left.key < right.key {
-            if left.all && !left.printed {
+            if left.config.all && !left.printed {
                 print_join(left, None);
             }
             todo = left.refill();
         }
         else {
-            if right.all && !right.printed {
+            if right.config.all && !right.printed {
                 print_join(right, None);
             }
             todo = right.refill();
@@ -145,20 +164,22 @@ pub fn join(left: &mut JoinFile, right: &mut JoinFile) {
     }
 
     // Print the last if all (normally this would happen on refill)
-    if left.all && !left.printed {
+    if left.config.all && !left.printed {
         print_join(left, None);
     }
-    if right.all && !right.printed {
+    if right.config.all && !right.printed {
         print_join(right, None);
     }
 
     // Finish off the remaining unpairable lines
-    if !left.eof && left.all {
+    if !left.eof && left.config.all {
         left.finish();
     }
-    else if !right.eof && right.all {
+    else if !right.eof && right.config.all {
         right.finish();
     }
+
+    Ok(())
 }
 
 fn print_join(file: &mut JoinFile, file2: Option<&mut JoinFile>) {

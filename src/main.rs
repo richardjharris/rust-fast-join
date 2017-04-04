@@ -1,15 +1,27 @@
 #[macro_use]
 extern crate clap;
 extern crate rjoin;
+use std::process;
+use std::error::Error;
+use std::io::Write;
 
-use rjoin::JoinFile;
+use rjoin::{JoinFileConfig, JoinConfig};
 
 fn main() {
-    let (mut left, mut right) = setup();
-    rjoin::join(&mut left, &mut right);
+    let mut stderr = std::io::stderr();
+    let config = setup().unwrap_or_else(|err| {
+        writeln!(&mut stderr, "Problem parsing arguments: {}", err)
+            .expect("could not write to stderr");
+        process::exit(1);
+    });
+    if let Err(e) = rjoin::join(config) {
+        writeln!(&mut stderr, "Application error: {}", e)
+            .expect("could not write to stderr");
+        process::exit(1);
+    }
 }
 
-fn setup() -> (JoinFile, JoinFile) {
+fn setup() -> Result<JoinConfig, Box<Error>> {
     let args = clap_app!(rjoin =>
         (version: crate_version!())
         (author: crate_authors!())
@@ -30,8 +42,8 @@ fn setup() -> (JoinFile, JoinFile) {
         let field = value_t!(args, format!("{}Field", dir), usize).unwrap_or(1);
         let all = args.is_present(format!("{}All", dir));
 
-        files.push( JoinFile::new(filename, field, all) );
+        files.push( JoinFileConfig { filename: filename.into(), field: field, all: all } );
     }
     // return the two elements as a tuple
-    (files.remove(0), files.remove(0))
+    Ok(JoinConfig { left: files.remove(0), right: files.remove(0) })
 }
