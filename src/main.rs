@@ -53,6 +53,7 @@ fn setup() -> Result<JoinConfig, Box<Error>> {
     Ok(JoinConfig { left: files.remove(0), right: files.remove(0), output: output })
 }
 
+// Parse a string like 'auto' or '0,1.1,1.2,2.1' into an OutputOrder struct.
 fn parse_output_fields(arg: &str) -> Result<OutputOrder, Box<Error>> {
 
     if arg.trim() == "auto" {

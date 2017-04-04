@@ -129,12 +129,6 @@ impl JoinFile {
         }
     }
 
-    fn finish(&mut self) {
-        while self.refill() {
-            print_join(self, None);
-        }
-    }
-
     // Fetches 1-indexed field from row
     fn get_field(string: &str, field: usize) -> &str {
         match string.split('\t').nth(field - 1) {
@@ -147,6 +141,7 @@ impl JoinFile {
 pub fn join(config: JoinConfig) -> Result<(), Box<Error>> {
     let left = &mut JoinFile::new(config.left)?;
     let right = &mut JoinFile::new(config.right)?;
+    let output = config.output;
 
     if !left.first_fill() {
         panic!("No input found on left side");
@@ -159,18 +154,18 @@ pub fn join(config: JoinConfig) -> Result<(), Box<Error>> {
     let mut todo = true;
     while todo {
         if left.key == right.key {
-            print_join(left, Some(right));
+            print_join(&output, Some(left), Some(right));
             todo = smart_refill(left, right);
         }
         else if left.key < right.key {
             if left.config.all && !left.printed {
-                print_join(left, None);
+                print_join(&output, Some(left), None);
             }
             todo = left.refill();
         }
         else {
             if right.config.all && !right.printed {
-                print_join(right, None);
+                print_join(&output, None, Some(right));
             }
             todo = right.refill();
         }
@@ -178,33 +173,75 @@ pub fn join(config: JoinConfig) -> Result<(), Box<Error>> {
 
     // Print the last if all (normally this would happen on refill)
     if left.config.all && !left.printed {
-        print_join(left, None);
+        print_join(&output, Some(left), None);
     }
     if right.config.all && !right.printed {
-        print_join(right, None);
+        print_join(&output, None, Some(right));
     }
 
     // Finish off the remaining unpairable lines
     if !left.eof && left.config.all {
-        left.finish();
+        while left.refill() {
+            print_join(&output, Some(left), None);
+        }
     }
     else if !right.eof && right.config.all {
-        right.finish();
+        while right.refill() {
+            print_join(&output, None, Some(right));
+        }
     }
 
     Ok(())
 }
 
-fn print_join(file: &mut JoinFile, file2: Option<&mut JoinFile>) {
-    print!("{}\t{}", file.key, file.row);
-    file.printed = true;
+fn print_join(output: &OutputOrder, mut left: Option<&mut JoinFile>, mut right: Option<&mut JoinFile>) {
 
-    if let Some(f) = file2 {
-        print!("\t{}", f.row);
+    set_printed(&mut left, &mut right);
+
+    inner_print_join(&output, left, right);
+}
+
+fn set_printed(left: &mut Option<&mut JoinFile>, right: &mut Option<&mut JoinFile>) {
+    if let Some(ref mut f) = *left {
         f.printed = true;
     }
+    if let Some(ref mut f) = *right {
+        f.printed = true;
+    }
+}
 
-    println!("");
+fn inner_print_join(output: &OutputOrder, left: Option<&mut JoinFile>, right: Option<&mut JoinFile>) {
+
+    let left_fields : Option<Vec<_>> = left.as_ref().map(|x| x.row.split('\t').collect());
+    let right_fields : Option<Vec<_>> = right.as_ref().map(|x| x.row.split('\t').collect());
+    let key : &str = left.as_ref().or(right.as_ref()).unwrap().key.as_ref();
+
+    let vals : Vec<&str> = match *output {
+        OutputOrder::Auto => {
+            // push key, then all non-key fields of left/right
+            // this requires knowing the size of left/right
+            unimplemented!();
+        },
+        OutputOrder::Explicit(ref fields) => {
+            fields.iter().map(|item| {
+                match *item {
+                    OutputField::JoinField => {
+                        &key
+                    },
+                    OutputField::FileField { file, field } => {
+                        let file = if file == 1 { &left_fields } else { &right_fields };
+
+                        match file {
+                            &Some(ref f) => f[field - 1],
+                            &None        => "",
+                        }
+                    },
+                }
+            }).collect()
+        }
+    };
+    println!("{}", vals.join("\t"));
+
 }
 
 // Both left and right match, decide which one to refill first
