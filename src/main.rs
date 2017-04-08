@@ -62,14 +62,14 @@ fn parse_output_fields(arg: &str) -> Result<OutputOrder, Box<Error>> {
 
     let mut fields : Vec<_> = vec![];
 
-    for item in arg.split(",") {
+    for item in arg.split(',') {
         let item = item.trim();
 
         if item == "0" {
             fields.push(OutputField::JoinField);
         }
         else {
-            let nums : Vec<&str> = item.split(".").collect();
+            let nums : Vec<&str> = item.split('.').collect();
             if nums.len() != 2 {
                 return Err("output field format must be '0' or 'x.y' where x is the file number and y is the field number".into());
             }

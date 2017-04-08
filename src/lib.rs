@@ -195,10 +195,8 @@ pub fn join(config: JoinConfig) -> Result<(), Box<Error>> {
 }
 
 fn print_join(output: &OutputOrder, mut left: Option<&mut JoinFile>, mut right: Option<&mut JoinFile>) {
-
     set_printed(&mut left, &mut right);
-
-    inner_print_join(&output, left, right);
+    inner_print_join(output, &left, &right);
 }
 
 fn set_printed(left: &mut Option<&mut JoinFile>, right: &mut Option<&mut JoinFile>) {
@@ -210,11 +208,13 @@ fn set_printed(left: &mut Option<&mut JoinFile>, right: &mut Option<&mut JoinFil
     }
 }
 
-fn inner_print_join(output: &OutputOrder, left: Option<&mut JoinFile>, right: Option<&mut JoinFile>) {
+fn inner_print_join(output: &OutputOrder, left: &Option<&mut JoinFile>, right: &Option<&mut JoinFile>) {
 
     let left_fields : Option<Vec<_>> = left.as_ref().map(|x| x.row.split('\t').collect());
     let right_fields : Option<Vec<_>> = right.as_ref().map(|x| x.row.split('\t').collect());
-    let key : &str = left.as_ref().or(right.as_ref()).unwrap().key.as_ref();
+    let key : &str = left.as_ref()
+                         .or_else(|| right.as_ref())
+                         .unwrap().key.as_ref();
 
     let vals : Vec<&str> = match *output {
         OutputOrder::Auto => {
@@ -231,9 +231,9 @@ fn inner_print_join(output: &OutputOrder, left: Option<&mut JoinFile>, right: Op
                     OutputField::FileField { file, field } => {
                         let file = if file == 1 { &left_fields } else { &right_fields };
 
-                        match file {
-                            &Some(ref f) => f[field - 1],
-                            &None        => "",
+                        match *file {
+                            Some(ref f) => f[field - 1],
+                            None        => "",
                         }
                     },
                 }
