@@ -1,6 +1,7 @@
 use std::error::Error;
 use std::{io, fs};
 use std::io::{BufReader, BufRead};
+use std::cmp::Ordering;
 
 //   -j, -1 x, -2 x, -a/-v 1,2 options: compatible with join
 //   custom delimiter -d
@@ -153,22 +154,24 @@ pub fn join(config: JoinConfig) -> Result<(), Box<Error>> {
     // Loop through the inputs
     let mut todo = true;
     while todo {
-        if left.key == right.key {
-            print_join(&output, Some(left), Some(right));
-            todo = smart_refill(left, right);
-        }
-        else if left.key < right.key {
-            if left.config.all && !left.printed {
-                print_join(&output, Some(left), None);
-            }
-            todo = left.refill();
-        }
-        else {
-            if right.config.all && !right.printed {
-                print_join(&output, None, Some(right));
-            }
-            todo = right.refill();
-        }
+        match left.key.cmp(&right.key) {
+            Ordering::Equal => {
+                print_join(&output, Some(left), Some(right));
+                todo = smart_refill(left, right);
+            },
+            Ordering::Less => {
+                if left.config.all && !left.printed {
+                    print_join(&output, Some(left), None);
+                }
+                todo = left.refill();
+            },
+            Ordering::Greater => {
+                if right.config.all && !right.printed {
+                    print_join(&output, None, Some(right));
+                }
+                todo = right.refill();
+            },
+        };
     }
 
     // Print the last if all (normally this would happen on refill)
@@ -253,13 +256,13 @@ fn smart_refill(left: &mut JoinFile, right: &mut JoinFile) -> bool {
     else if right.eof {
         left.refill()
     }
-    else if left.next_key == right.next_key {
-        left.refill() && right.refill()
-    }
-    else if left.next_key < right.next_key {
-        left.refill()
-    }
     else {
-        right.refill()
+        match left.next_key.cmp(&right.next_key) {
+            Ordering::Equal => {
+                left.refill() && right.refill()
+            },
+            Ordering::Less => { left.refill() },
+            Ordering::Greater => { right.refill() },
+        }
     }
 }
