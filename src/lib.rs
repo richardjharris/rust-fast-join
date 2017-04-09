@@ -166,13 +166,18 @@ impl JoinFile {
 
     // Read a line into next_row/next_key, return false on EOF
     fn read_line(&mut self) -> bool {
-        if let Some(line) = self.lines.next() {
-            self.next_row = SplitLine::new(line.expect("read error"), '\t', self.config.field - 1);
-            true
-        }
-        else {
-            self.eof = true;
-            false
+        match self.lines.next() {
+            Some(Ok(line)) => {
+                self.next_row = SplitLine::new(line, '\t', self.config.field - 1);
+                true
+            },
+            Some(Err(_)) => {
+                panic!("read error");
+            },
+            None => {
+                self.eof = true;
+                false
+            },
         }
     }
 } // impl JoinFile 
