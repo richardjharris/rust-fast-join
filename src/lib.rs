@@ -44,6 +44,11 @@ impl SplitLine {
     fn key(&self) -> &str {
         self.field(self.key_field)
     }
+
+    // Return an iterable collection of &str.
+    fn fields(&self) -> Vec<&str> {
+        self.fields.iter().map(|x| unsafe { &**x }).collect()
+    }
 }
 
 // Clone requires us to clone the underlying string. We reuse the offsets
@@ -99,11 +104,9 @@ struct JoinFile {
     config: JoinFileConfig,
     lines: Box<LineIterator>,
     eof: bool,
-    row: String,
-    key: String,
+    row: SplitLine,
     printed: bool,
-    next_row: String,
-    next_key: String,
+    next_row: SplitLine,
 }
 
 impl JoinFile {
@@ -125,10 +128,8 @@ impl JoinFile {
                 lines: iter,
                 eof: false,
                 printed: false,
-                row: String::new(),
-                key: String::new(),
-                next_key: String::new(),
-                next_row: String::new(),
+                row: SplitLine::new("".into(), '\t', 0),
+                next_row: SplitLine::new("".into(), '\t', 0),
             }
         })
     }
@@ -151,7 +152,6 @@ impl JoinFile {
             return false;
         }
         self.row = self.next_row.clone();
-        self.key = self.next_key.clone();
         self.printed = false;
 
         // This sets .eof = true, which will cause the next call to fail.
@@ -167,21 +167,12 @@ impl JoinFile {
     // Read a line into next_row/next_key, return false on EOF
     fn read_line(&mut self) -> bool {
         if let Some(line) = self.lines.next() {
-            self.next_row = line.expect("read error");
-            self.next_key = JoinFile::get_field(&self.next_row, self.config.field).into();
+            self.next_row = SplitLine::new(line.expect("read error"), '\t', self.config.field - 1);
             true
         }
         else {
             self.eof = true;
             false
-        }
-    }
-
-    // Fetches 1-indexed field from row
-    fn get_field(string: &str, field: usize) -> &str {
-        match string.split('\t').nth(field - 1) {
-            Some(s) => s,
-            None => "",
         }
     }
 } // impl JoinFile 
@@ -201,7 +192,7 @@ pub fn join(config: JoinConfig) -> Result<(), Box<Error>> {
     // Loop through the inputs
     let mut todo = true;
     while todo {
-        match left.key.cmp(&right.key) {
+        match left.row.key().cmp(&right.row.key()) {
             Ordering::Equal => {
                 print_join(&output, Some(left), Some(right));
                 todo = smart_refill(left, right);
@@ -260,11 +251,11 @@ fn set_printed(left: &mut Option<&mut JoinFile>, right: &mut Option<&mut JoinFil
 
 fn inner_print_join(output: &OutputOrder, left: &Option<&mut JoinFile>, right: &Option<&mut JoinFile>) {
 
-    let left_fields : Option<Vec<_>> = left.as_ref().map(|x| x.row.split('\t').collect());
-    let right_fields : Option<Vec<_>> = right.as_ref().map(|x| x.row.split('\t').collect());
+    let left_fields : Option<Vec<_>> = left.as_ref().map(|x| x.row.fields());
+    let right_fields : Option<Vec<_>> = right.as_ref().map(|x| x.row.fields());
     let key : &str = left.as_ref()
                          .or_else(|| right.as_ref())
-                         .unwrap().key.as_ref();
+                         .unwrap().row.key().as_ref();
 
     let vals : Vec<&str> = match *output {
         OutputOrder::Auto => {
@@ -304,7 +295,7 @@ fn smart_refill(left: &mut JoinFile, right: &mut JoinFile) -> bool {
         left.refill()
     }
     else {
-        match left.next_key.cmp(&right.next_key) {
+        match left.next_row.key().cmp(&right.next_row.key()) {
             Ordering::Equal => {
                 left.refill() && right.refill()
             },
