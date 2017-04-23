@@ -80,6 +80,7 @@ pub struct JoinConfig {
     pub left: JoinFileConfig,
     pub right: JoinFileConfig,
     pub output: OutputOrder,
+    pub output_fn: fn(String) -> (),
 }
 
 pub struct JoinFileConfig {
@@ -186,6 +187,7 @@ pub fn join(config: JoinConfig) -> Result<(), Box<Error>> {
     let left = &mut JoinFile::new(config.left)?;
     let right = &mut JoinFile::new(config.right)?;
     let output = config.output;
+    let output_fn = config.output_fn;
 
     if !left.first_fill() {
         panic!("No input found on left side");
@@ -199,18 +201,18 @@ pub fn join(config: JoinConfig) -> Result<(), Box<Error>> {
     while todo {
         match left.row.key().cmp(&right.row.key()) {
             Ordering::Equal => {
-                print_join(&output, Some(left), Some(right));
+                print_join(&output, output_fn, Some(left), Some(right));
                 todo = smart_refill(left, right);
             },
             Ordering::Less => {
                 if left.config.all && !left.printed {
-                    print_join(&output, Some(left), None);
+                    print_join(&output, output_fn, Some(left), None);
                 }
                 todo = left.refill();
             },
             Ordering::Greater => {
                 if right.config.all && !right.printed {
-                    print_join(&output, None, Some(right));
+                    print_join(&output, output_fn, None, Some(right));
                 }
                 todo = right.refill();
             },
@@ -219,30 +221,30 @@ pub fn join(config: JoinConfig) -> Result<(), Box<Error>> {
 
     // Print the last if all (normally this would happen on refill)
     if left.config.all && !left.printed {
-        print_join(&output, Some(left), None);
+        print_join(&output, output_fn, Some(left), None);
     }
     if right.config.all && !right.printed {
-        print_join(&output, None, Some(right));
+        print_join(&output, output_fn, None, Some(right));
     }
 
     // Finish off the remaining unpairable lines
     if !left.eof && left.config.all {
         while left.refill() {
-            print_join(&output, Some(left), None);
+            print_join(&output, output_fn, Some(left), None);
         }
     }
     else if !right.eof && right.config.all {
         while right.refill() {
-            print_join(&output, None, Some(right));
+            print_join(&output, output_fn, None, Some(right));
         }
     }
 
     Ok(())
 }
 
-fn print_join(output: &OutputOrder, mut left: Option<&mut JoinFile>, mut right: Option<&mut JoinFile>) {
+fn print_join(output: &OutputOrder, output_fn: fn(String) -> (), mut left: Option<&mut JoinFile>, mut right: Option<&mut JoinFile>) {
     set_printed(&mut left, &mut right);
-    inner_print_join(output, &left, &right);
+    inner_print_join(output, output_fn, &left, &right);
 }
 
 fn set_printed(left: &mut Option<&mut JoinFile>, right: &mut Option<&mut JoinFile>) {
@@ -254,7 +256,7 @@ fn set_printed(left: &mut Option<&mut JoinFile>, right: &mut Option<&mut JoinFil
     }
 }
 
-fn inner_print_join(output: &OutputOrder, left: &Option<&mut JoinFile>, right: &Option<&mut JoinFile>) {
+fn inner_print_join(output: &OutputOrder, output_fn: fn(String) -> (), left: &Option<&mut JoinFile>, right: &Option<&mut JoinFile>) {
 
     let left_fields : Option<Vec<_>> = left.as_ref().map(|x| x.row.fields());
     let right_fields : Option<Vec<_>> = right.as_ref().map(|x| x.row.fields());
@@ -286,7 +288,7 @@ fn inner_print_join(output: &OutputOrder, left: &Option<&mut JoinFile>, right: &
             }).collect()
         }
     };
-    println!("{}", vals.join("\t"));
+    output_fn(vals.join("\t"));
 
 }
 

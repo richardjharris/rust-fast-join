@@ -21,6 +21,11 @@ fn main() {
     }
 }
 
+// Default handler for join output lines
+fn println(s: String) -> () {
+    println!("{}", s);
+}
+
 fn setup() -> Result<JoinConfig, Box<Error>> {
     let args = clap_app!(rjoin =>
         (version: crate_version!())
@@ -50,7 +55,7 @@ fn setup() -> Result<JoinConfig, Box<Error>> {
     let output = parse_output_fields(output)?;
 
     // return the two elements as a tuple
-    Ok(JoinConfig { left: files.remove(0), right: files.remove(0), output: output })
+    Ok(JoinConfig { left: files.remove(0), right: files.remove(0), output: output, output_fn: println })
 }
 
 // Parse a string like 'auto' or '0,1.1,1.2,2.1' into an OutputOrder struct.
