@@ -3,25 +3,6 @@ use std::{io, fs};
 use std::io::{BufReader, BufRead};
 use std::cmp::Ordering;
 
-//   -j, -1 x, -2 x, -a/-v 1,2 options: compatible with join
-//   custom delimiter -d
-//   -e empty field (missing)
-//   --empty-left, --empty-right: missing for joins
-//   -i (ignore case) ?
-//   -o format: '0,1.1,2.2'
-//   -H headers (?) and -o 'Hoster Parent',...
-//   --check-order ?
-//   Multiple join fields support
-//
-//   List of pros and cons:
-//     * Fixed memory usage
-//     * Handles cases where one file has a huge number of rows mapping to a single row
-//     * New features like multiple join fields etc
-//   Cons:
-//    * Doesn't handle collation other than simple byte comparison
-//    * Doesn't handle (or detect) cross joins properly
-//    * Doesn't detect incorrect ordering of files
-
 // Vec<&str> of fields in a string, with string also kept as backing storage.
 // Must use raw pointers as Rust doesn't storing X and &(part of X) together
 struct SplitLine {
