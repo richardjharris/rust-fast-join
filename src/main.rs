@@ -82,7 +82,12 @@ fn parse_output_fields(arg: &str) -> Result<OutputOrder, Box<Error>> {
             if file != 1 && file != 2 {
                 return Err("output field file number must be either 1 or 2".into());
             }
-            let field = nums[1].parse()?;
+            let mut field = nums[1].parse()?;
+            if field < 1 {
+                return Err("output field column number must be greater than 0".into());
+            }
+            // convert to 0-indexing
+            field -= 1;
             fields.push(OutputField::FileField { file, field });
         }
     }

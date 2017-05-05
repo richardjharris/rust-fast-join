@@ -39,6 +39,7 @@ struct JoinFile {
     row: SplitLine,
     printed: bool,
     next_row: SplitLine,
+    num_fields: usize,
 }
 
 impl JoinFile {
@@ -62,6 +63,7 @@ impl JoinFile {
                 printed: false,
                 row: SplitLine::new("".into(), '\t', 0),
                 next_row: SplitLine::new("".into(), '\t', 0),
+                num_fields: 0,
             }
         })
     }
@@ -70,7 +72,12 @@ impl JoinFile {
     fn first_fill(&mut self) -> bool {
         if self.read_line() {
             // Refill again to move these to .row and .key, and read in another line
-            self.refill()
+            let ret = self.refill();
+
+            // Set num_fields for the 'auto' output setting
+            // XXX set to 0 if ret = false?
+            self.num_fields = self.row.num_fields();
+            ret
         }
         else {
             // Shouldn't happen for first fill
@@ -132,18 +139,18 @@ pub fn join(config: JoinConfig) -> Result<(), Box<Error>> {
     while todo {
         match left.row.key().cmp(&right.row.key()) {
             Ordering::Equal => {
-                print_join(&output, output_fn, Some(left), Some(right));
+                do_output(left, right, &output, output_fn, true, true);
                 todo = smart_refill(left, right);
             },
             Ordering::Less => {
                 if left.config.all && !left.printed {
-                    print_join(&output, output_fn, Some(left), None);
+                    do_output(left, right, &output, output_fn, true, false);
                 }
                 todo = left.refill();
             },
             Ordering::Greater => {
                 if right.config.all && !right.printed {
-                    print_join(&output, output_fn, None, Some(right));
+                    do_output(left, right, &output, output_fn, false, true);
                 }
                 todo = right.refill();
             },
@@ -152,54 +159,53 @@ pub fn join(config: JoinConfig) -> Result<(), Box<Error>> {
 
     // Print the last if all (normally this would happen on refill)
     if left.config.all && !left.printed {
-        print_join(&output, output_fn, Some(left), None);
+        do_output(left, right, &output, output_fn, true, false);
     }
     if right.config.all && !right.printed {
-        print_join(&output, output_fn, None, Some(right));
+        do_output(left, right, &output, output_fn, false, true);
     }
 
     // Finish off the remaining unpairable lines
     if !left.eof && left.config.all {
         while left.refill() {
-            print_join(&output, output_fn, Some(left), None);
+            do_output(left, right, &output, output_fn, true, false);
         }
     }
     else if !right.eof && right.config.all {
         while right.refill() {
-            print_join(&output, output_fn, None, Some(right));
+            do_output(left, right, &output, output_fn, false, true);
         }
     }
 
     Ok(())
 }
 
-fn print_join(output: &OutputOrder, output_fn: fn(String) -> (), mut left: Option<&mut JoinFile>, mut right: Option<&mut JoinFile>) {
-    set_printed(&mut left, &mut right);
-    inner_print_join(output, output_fn, &left, &right);
-}
+fn do_output(left: &mut JoinFile, right: &mut JoinFile,
+             output: &OutputOrder, output_fn: fn(String) -> (),
+             print_left: bool, print_right: bool) {
 
-fn set_printed(left: &mut Option<&mut JoinFile>, right: &mut Option<&mut JoinFile>) {
-    if let Some(ref mut f) = *left {
-        f.printed = true;
+    if print_left {
+        left.printed = true;
     }
-    if let Some(ref mut f) = *right {
-        f.printed = true;
+    if print_right {
+        right.printed = true;
     }
-}
 
-fn inner_print_join(output: &OutputOrder, output_fn: fn(String) -> (), left: &Option<&mut JoinFile>, right: &Option<&mut JoinFile>) {
-
-    let left_fields : Option<Vec<_>> = left.as_ref().map(|x| x.row.fields());
-    let right_fields : Option<Vec<_>> = right.as_ref().map(|x| x.row.fields());
-    let key : &str = left.as_ref()
-                         .or_else(|| right.as_ref())
-                         .unwrap().row.key().as_ref();
+    let key : &str = if print_left { left.row.key() } else { right.row.key() };
 
     let vals : Vec<&str> = match *output {
         OutputOrder::Auto => {
-            // push key, then all non-key fields of left/right
-            // this requires knowing the size of left/right
-            unimplemented!();
+            // Output join field, then remaining fields from left, then right
+            // Output blank fields as appropriate
+            let mut v = vec![];
+            v.push(key);
+            if print_left {
+                v.append( &mut left.row.fields_except_key() );
+            }
+            if print_right {
+                v.append( &mut right.row.fields_except_key() );
+            }
+            v
         },
         OutputOrder::Explicit(ref fields) => {
             fields.iter().map(|item| {
@@ -208,11 +214,13 @@ fn inner_print_join(output: &OutputOrder, output_fn: fn(String) -> (), left: &Op
                         &key
                     },
                     OutputField::FileField { file, field } => {
-                        let file = if file == 1 { &left_fields } else { &right_fields };
+                        let f = if file == 1 { &left } else { &right };
 
-                        match *file {
-                            Some(ref f) => f[field - 1],
-                            None        => "",
+                        // Check against 'which'
+                        let can_print = (file == 1 && print_left) || (file == 2 && print_right);
+                        match can_print {
+                            true  => f.row.field(field),
+                            false => "",
                         }
                     },
                 }
