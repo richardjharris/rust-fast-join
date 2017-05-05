@@ -35,6 +35,7 @@ fn setup() -> Result<JoinConfig, Box<Error>> {
         (@arg rightField: -r --right +takes_value "Select the field to index from the right file")
         (@arg leftAll: -L --("left-all") "Print all lines from the left file, even if they don't match")
         (@arg rightAll: -R --("right-all") "Print all lines from the right file, even if they don't match")
+        (@arg outer: --("outer") "Print all lines from both files (equivalent to -LR)")
         (@arg leftFile: +required "Left file")
         (@arg rightFile: +required "Right file")
         (@arg output: -o --("output") +takes_value "Specify output ordering of fields (join syntax)")
@@ -42,11 +43,12 @@ fn setup() -> Result<JoinConfig, Box<Error>> {
 
     let mut files = vec![];
     let dirs = vec!["left", "right"];
+    let outer = args.is_present("outer");
 
     for dir in dirs {
         let filename = args.value_of(format!("{}File", dir)).unwrap();
         let field = value_t!(args, format!("{}Field", dir), usize).unwrap_or(1);
-        let all = args.is_present(format!("{}All", dir));
+        let all = args.is_present(format!("{}All", dir)) || outer;
 
         files.push( JoinFileConfig { filename: filename.into(), field: field, all: all } );
     }
