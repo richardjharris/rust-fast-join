@@ -36,6 +36,7 @@ fn setup() -> Result<JoinConfig, Box<Error>> {
         (@arg leftAll: -L --("left-all") "Print all lines from the left file, even if they don't match")
         (@arg rightAll: -R --("right-all") "Print all lines from the right file, even if they don't match")
         (@arg outer: --("outer") "Print all lines from both files (equivalent to -LR)")
+        (@arg joinField: -j +takes_value "Select the key field for both left/right files")
         (@arg leftFile: +required "Left file")
         (@arg rightFile: +required "Right file")
         (@arg leftMissing: --("left-missing") +takes_value "When using --right-all, use this value as a placeholder for any missing left columns.")
@@ -46,13 +47,14 @@ fn setup() -> Result<JoinConfig, Box<Error>> {
     let mut files = vec![];
     let dirs = vec!["left", "right"];
     let outer = args.is_present("outer");
+    let default_join_field = args.value_of("joinField").unwrap_or("1");
 
     for dir in dirs {
         let filename = args.value_of(format!("{}File", dir)).unwrap();
         let all = args.is_present(format!("{}All", dir)) || outer;
         let missing = args.value_of(format!("{}Missing", dir)).unwrap_or("").to_owned();
 
-        let field = args.value_of(format!("{}Field", dir)).unwrap_or("1");
+        let field = args.value_of(format!("{}Field", dir)).unwrap_or(default_join_field);
         let field = parse_key_fields(field)?;
         files.push( JoinFileConfig { filename: filename.into(), field: field, all: all, missing: missing } );
     }
