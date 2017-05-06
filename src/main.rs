@@ -49,9 +49,15 @@ fn setup() -> Result<JoinConfig, Box<Error>> {
 
     for dir in dirs {
         let filename = args.value_of(format!("{}File", dir)).unwrap();
-        let field = value_t!(args, format!("{}Field", dir), usize).unwrap_or(1);
+        let mut field = value_t!(args, format!("{}Field", dir), usize).unwrap_or(1);
         let all = args.is_present(format!("{}All", dir)) || outer;
         let missing = value_t!(args, format!("{}Missing", dir), String).unwrap_or("".into());
+
+        // Convert join field to 0 indexing
+        if field < 1 {
+            return Err("join field must be greater than 0".into());
+        }
+        field -= 1;
 
         files.push( JoinFileConfig { filename: filename.into(), field: field, all: all, missing: missing } );
     }
@@ -60,7 +66,12 @@ fn setup() -> Result<JoinConfig, Box<Error>> {
     let output = parse_output_fields(output)?;
 
     // return the two elements as a tuple
-    Ok(JoinConfig { left: files.remove(0), right: files.remove(0), output: output, output_fn: println })
+    Ok(JoinConfig {
+        left: files.remove(0),
+        right: files.remove(0),
+        output: output,
+        output_fn: println,
+    })
 }
 
 // Parse a string like 'auto' or '0,1.1,1.2,2.1' into an OutputOrder struct.

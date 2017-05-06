@@ -112,7 +112,7 @@ impl JoinFile {
     fn read_line(&mut self) -> bool {
         match self.lines.next() {
             Some(Ok(line)) => {
-                self.next_row = SplitLine::new(line, '\t', self.config.field - 1);
+                self.next_row = SplitLine::new(line, '\t', self.config.field);
                 true
             },
             Some(Err(_)) => {
@@ -155,6 +155,8 @@ pub fn join(config: JoinConfig) -> Result<(), Box<Error>> {
         }
         output = OutputOrder::Explicit(v);
     }
+
+    // XXX todo: check -r / -l settings here, and warn
 
     // Loop through the inputs
     let mut todo = true;

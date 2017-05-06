@@ -3,6 +3,7 @@
 struct SplitLine {
     line: String,
     fields: Vec<*const str>,
+    // 0-indexed
     key_field: usize,
 }
 
@@ -13,11 +14,12 @@ impl SplitLine {
         SplitLine { line, fields, key_field }
     }
 
-    // Return field (out of bounds?)
+    // Return field (out of bounds?). 0-indexed
     fn field(&self, index: usize) -> &str {
         unsafe { &*self.fields[index] }
     }
     
+    // XXX this should handle out of bounds by returning empty string
     fn key(&self) -> &str {
         self.field(self.key_field)
     }
