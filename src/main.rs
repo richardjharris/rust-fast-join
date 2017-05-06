@@ -97,17 +97,40 @@ fn parse_output_fields(arg: &str) -> Result<OutputOrder, Box<Error>> {
             if nums.len() != 2 {
                 return Err("output field format must be '0' or 'x.y' where x is the file number and y is the field number".into());
             }
-            let file = nums[0].parse()?;
+            let file = nums[0].parse::<usize>()?;
             if file != 1 && file != 2 {
                 return Err("output field file number must be either 1 or 2".into());
             }
-            let mut field = nums[1].parse()?;
-            if field < 1 {
-                return Err("output field column number must be greater than 0".into());
+            if let Ok(field) = nums[1].parse::<usize>() {
+                if field < 1 {
+                    return Err("output field column number must be greater than 0".into());
+                }
+                // convert to 0-indexing
+                fields.push(OutputField::FileField { file: file, field: field - 1 });
             }
-            // convert to 0-indexing
-            field -= 1;
-            fields.push(OutputField::FileField { file, field });
+            else {
+                // Detect a 1.x-y form
+                let range : Vec<&str> = nums[1].split('-').collect();
+                if range.len() == 2 {
+                    let start = range[0].parse::<usize>()?;
+                    let end = range[1].parse::<usize>()?;
+                    if start < 1 || end < 1 {
+                        return Err("output field column number must be greater than 0".into());
+                    }
+                    if start > end {
+                        let err = format!("Field range '{}' is invalid", nums[1]);
+                        return Err(err.into());
+                    }
+
+                    for field in start..end+1 {
+                        fields.push(OutputField::FileField { file: file, field: field - 1 });
+                    }
+                }
+                else {
+                    let err = format!("Field specification '{}' is invalid", nums[1]);
+                    return Err(err.into());
+                }
+            }
         }
     }
 
