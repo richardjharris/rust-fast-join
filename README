@@ -3,22 +3,41 @@ rjoin - rico's join
 
 Similar to unix join(1) or gjoin, with the following differences:
 
- - cross-joins (many-to-many joins) are not handled properly
-   (will be detected at some point)
+ - O(1) memory usage - don't allocate O(n) memory when joining
+   files with a large number of matching rows
 
- - however, memory usage for cross joins is no longer O(n) which
-   ensures constant memory usage and runtime
+ - Cross-joins do not generate NxM output rows. There are not
+   really supported. (Need to detect them at some point)
 
-   for example, if one file has a huge number of rows mapping to
-   a single row in the other file, they will not be buffered in
-   memory.
+ - Join on multiple fields (-l 1,2 -r 1,2)
 
- - join on multiple fields
+ - Slightly clearer options: -l/-r to specify join field(s), -L/-R
+   to specify an inner join on the left or right side
 
- - distinction between empty (present but zero-width) and missing fields.
-   placeholder value for missing fields can be supplied for both left
-   and right sides, which simplifies creation of 'switching' data
+ - --outer for outer joins (equivalent to -L -R)
 
- - unsure about UTF-8 support
+ - -j for specifying the key field for both the left and right files
+   simultaneously (equivalent to -l X -r X)
 
- - no --check-order, --ignore-case, header handling
+ - Supports several output formats:
+   -o auto : uses first line to determine column count for each file;
+             outputs key field(s) followed by all non-key fields of left,
+             then right file. Consistent number of output columns
+   
+   -o gnudefault : GNU join default: key field, followed by all non-key
+             fields of each file. Number of columns may change for each
+             output line, depending on input.
+
+   -o 0,1.1,1.2,2.1 : standard GNU join output format
+
+   -o 0,1.1-10,2.2-5 : shorthand for column ranges (new)
+
+ - --left-missing and -right-missing values allow custom placeholder values
+   for missing left/right rows when performaing left or right outer joins.
+
+    e.g. --left-missing '[New]' --right-missing '[Expired]'
+
+   This differs from GNU join's -e option, which fills in both missing
+   relationship data, and all blank columns in both input files.
+ 
+ - Performance is roughly comparable with GNU join.
