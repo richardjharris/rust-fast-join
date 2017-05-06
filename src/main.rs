@@ -49,16 +49,11 @@ fn setup() -> Result<JoinConfig, Box<Error>> {
 
     for dir in dirs {
         let filename = args.value_of(format!("{}File", dir)).unwrap();
-        let mut field = value_t!(args, format!("{}Field", dir), usize).unwrap_or(1);
         let all = args.is_present(format!("{}All", dir)) || outer;
-        let missing = value_t!(args, format!("{}Missing", dir), String).unwrap_or("".into());
+        let missing = args.value_of(format!("{}Missing", dir)).unwrap_or("").to_owned();
 
-        // Convert join field to 0 indexing
-        if field < 1 {
-            return Err("join field must be greater than 0".into());
-        }
-        field -= 1;
-
+        let field = args.value_of(format!("{}Field", dir)).unwrap_or("1");
+        let field = parse_key_fields(field)?;
         files.push( JoinFileConfig { filename: filename.into(), field: field, all: all, missing: missing } );
     }
 
@@ -72,6 +67,22 @@ fn setup() -> Result<JoinConfig, Box<Error>> {
         output: output,
         output_fn: println,
     })
+}
+
+// Parse key fields (XXX re-use code from parse_output_fields)
+fn parse_key_fields(arg: &str) -> Result<Vec<usize>, Box<Error>> {
+    let mut fields : Vec<_> = vec![];
+    
+    for item in arg.split(',') {
+        let mut field = item.trim().parse::<usize>()?;
+        if field < 1 {
+            return Err("output field column number must be greater than 0".into());
+        }
+        field -= 1;
+        fields.push(field);
+    }
+    
+    Ok(fields)
 }
 
 // Parse a string like 'auto' or '0,1.1,1.2,2.1' into an OutputOrder struct.

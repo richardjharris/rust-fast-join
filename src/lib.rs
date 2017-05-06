@@ -16,7 +16,7 @@ pub struct JoinConfig {
 
 pub struct JoinFileConfig {
     pub all: bool,
-    pub field: usize,
+    pub field: Vec<usize>,
     pub filename: String,
     pub missing: String,
 }
@@ -66,8 +66,8 @@ impl JoinFile {
                 lines: iter,
                 eof: false,
                 printed: false,
-                row: SplitLine::new("".into(), '\t', 0),
-                next_row: SplitLine::new("".into(), '\t', 0),
+                row: SplitLine::new("".into(), '\t', vec![0]),
+                next_row: SplitLine::new("".into(), '\t', vec![0]),
                 num_fields: 0,
             }
         })
@@ -112,7 +112,7 @@ impl JoinFile {
     fn read_line(&mut self) -> bool {
         match self.lines.next() {
             Some(Ok(line)) => {
-                self.next_row = SplitLine::new(line, '\t', self.config.field);
+                self.next_row = SplitLine::new(line, '\t', self.config.field.clone());
                 true
             },
             Some(Err(_)) => {
@@ -147,7 +147,7 @@ pub fn join(config: JoinConfig) -> Result<(), Box<Error>> {
         let mut file = 1;
         for f in vec![&left, &right] {
             for field in 0..f.num_fields {
-                if field != f.row.key_field {
+                if let None = f.row.key_fields.iter().find(|&&i| i == field) {
                     v.push(OutputField::FileField { file, field });
                 }
             }
@@ -161,7 +161,7 @@ pub fn join(config: JoinConfig) -> Result<(), Box<Error>> {
     // Loop through the inputs
     let mut todo = true;
     while todo {
-        match left.row.key().cmp(&right.row.key()) {
+        match compare_keys(&left.row.keys(), &right.row.keys()) {
             Ordering::Equal => {
                 do_output(left, right, &output, output_fn, true, true);
                 todo = smart_refill(left, right);
@@ -204,6 +204,17 @@ pub fn join(config: JoinConfig) -> Result<(), Box<Error>> {
     Ok(())
 }
 
+fn compare_keys(left: &Vec<&str>, right: &Vec<&str>) -> Ordering {
+    let mut result = Ordering::Equal;
+    for i in 0..left.len() {
+        result = left[i].cmp(right[i]);
+        if result != Ordering::Equal {
+            break
+        }
+    }
+    result
+}
+
 fn do_output(left: &mut JoinFile, right: &mut JoinFile,
              output: &OutputOrder, output_fn: fn(String) -> (),
              print_left: bool, print_right: bool) {
@@ -215,35 +226,35 @@ fn do_output(left: &mut JoinFile, right: &mut JoinFile,
         right.printed = true;
     }
 
-    let key : &str = if print_left { left.row.key() } else { right.row.key() };
+    let mut keys : Vec<&str> = if print_left { left.row.keys() } else { right.row.keys() };
 
     let vals : Vec<&str> = match *output {
         OutputOrder::GnuDefault => {
             // Output join field, then remaining fields from left, then right
             // Output blank fields as appropriate
             let mut v = vec![];
-            v.push(key);
+            v.append(&mut keys);
             if print_left {
-                v.append( &mut left.row.fields_except_key() );
+                v.append( &mut left.row.fields_except_keys() );
             }
             if print_right {
-                v.append( &mut right.row.fields_except_key() );
+                v.append( &mut right.row.fields_except_keys() );
             }
             v
         },
         OutputOrder::Explicit(ref fields) => {
-            fields.iter().map(|item| {
+            let mut v = vec![];
+            for item in fields {
                 match *item {
                     OutputField::JoinField => {
-                        &key
+                        // XXX this might fail if key field is specified twice
+                        v.append(&mut keys);
                     },
                     OutputField::FileField { file, field } => {
                         let f = if file == 1 { &left } else { &right };
 
-                        // Is the file actually joined for this line?
-                        if (file == 1 && print_left) || (file == 2 && print_right) {
-                            // Is the field available for the line? Some lines may be missing
-                            // trailing fields.
+                        v.push(if (file == 1 && print_left) || (file == 2 && print_right) {
+                            // File is joined, but might still be missing a trailing field
                             if field < f.row.num_fields() {
                                 f.row.field(field)
                             }
@@ -252,12 +263,13 @@ fn do_output(left: &mut JoinFile, right: &mut JoinFile,
                             }
                         }
                         else {
-                            // use missing value
+                            // File is not joined, so use missing value
                             &f.config.missing
-                        }
+                        });
                     },
                 }
-            }).collect()
+            }
+            v
         },
         OutputOrder::Auto => panic!("invalid OutputOrder, this is a bug."),
     };
@@ -275,7 +287,7 @@ fn smart_refill(left: &mut JoinFile, right: &mut JoinFile) -> bool {
         left.refill()
     }
     else {
-        match left.next_row.key().cmp(&right.next_row.key()) {
+        match compare_keys(&left.next_row.keys(), &right.next_row.keys()) {
             Ordering::Equal => {
                 left.refill() && right.refill()
             },
