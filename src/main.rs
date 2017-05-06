@@ -38,6 +38,8 @@ fn setup() -> Result<JoinConfig, Box<Error>> {
         (@arg outer: --("outer") "Print all lines from both files (equivalent to -LR)")
         (@arg leftFile: +required "Left file")
         (@arg rightFile: +required "Right file")
+        (@arg leftMissing: --("left-missing") +takes_value "When using --right-all, use this value as a placeholder for any missing left columns.")
+        (@arg rightMissing: --("right-missing") +takes_value "When using --left-all, use this value as a placeholder for any missing right columns.")
         (@arg output: -o --("output") +takes_value "Specify output ordering of fields (join syntax)")
     ).get_matches();
 
@@ -49,11 +51,12 @@ fn setup() -> Result<JoinConfig, Box<Error>> {
         let filename = args.value_of(format!("{}File", dir)).unwrap();
         let field = value_t!(args, format!("{}Field", dir), usize).unwrap_or(1);
         let all = args.is_present(format!("{}All", dir)) || outer;
+        let missing = value_t!(args, format!("{}Missing", dir), String).unwrap_or("".into());
 
-        files.push( JoinFileConfig { filename: filename.into(), field: field, all: all } );
+        files.push( JoinFileConfig { filename: filename.into(), field: field, all: all, missing: missing } );
     }
 
-    let output = args.value_of("output").unwrap_or("auto");
+    let output = args.value_of("output").unwrap_or("gnudefault");
     let output = parse_output_fields(output)?;
 
     // return the two elements as a tuple
@@ -65,6 +68,9 @@ fn parse_output_fields(arg: &str) -> Result<OutputOrder, Box<Error>> {
 
     if arg.trim() == "auto" {
         return Ok(OutputOrder::Auto)
+    }
+    if arg.trim() == "gnudefault" {
+        return Ok(OutputOrder::GnuDefault)
     }
 
     let mut fields : Vec<_> = vec![];

@@ -18,16 +18,21 @@ pub struct JoinFileConfig {
     pub all: bool,
     pub field: usize,
     pub filename: String,
+    pub missing: String,
 }
 
 #[derive(Debug)]
 pub enum OutputField {
     JoinField,
+    // File should be 1 or 2; field should be 0-indexed
     FileField { file: usize, field: usize },
 }
 
 #[derive(Debug)]
 pub enum OutputOrder {
+    // Key, plus all other fields from file1, then file2 (GNU Join default)
+    GnuDefault,
+    // Similar except the same number of fields are output for each line
     Auto,
     Explicit(Vec<OutputField>),
 }
@@ -124,7 +129,7 @@ impl JoinFile {
 pub fn join(config: JoinConfig) -> Result<(), Box<Error>> {
     let left = &mut JoinFile::new(config.left)?;
     let right = &mut JoinFile::new(config.right)?;
-    let output = config.output;
+    let mut output = config.output;
     let output_fn = config.output_fn;
 
     if !left.first_fill() {
@@ -132,6 +137,23 @@ pub fn join(config: JoinConfig) -> Result<(), Box<Error>> {
     }
     if !right.first_fill() {
         panic!("No input found on right side");
+    }
+
+    // If using Auto output order, update it to Explicit now we know the
+    // number of columns in each file.
+    if let OutputOrder::Auto = output {
+        let mut v = vec![];
+        v.push(OutputField::JoinField);
+        let mut file = 1;
+        for f in vec![&left, &right] {
+            for field in 0..f.num_fields {
+                if field != f.row.key_field {
+                    v.push(OutputField::FileField { file, field });
+                }
+            }
+            file += 1;
+        }
+        output = OutputOrder::Explicit(v);
     }
 
     // Loop through the inputs
@@ -194,7 +216,7 @@ fn do_output(left: &mut JoinFile, right: &mut JoinFile,
     let key : &str = if print_left { left.row.key() } else { right.row.key() };
 
     let vals : Vec<&str> = match *output {
-        OutputOrder::Auto => {
+        OutputOrder::GnuDefault => {
             // Output join field, then remaining fields from left, then right
             // Output blank fields as appropriate
             let mut v = vec![];
@@ -216,16 +238,26 @@ fn do_output(left: &mut JoinFile, right: &mut JoinFile,
                     OutputField::FileField { file, field } => {
                         let f = if file == 1 { &left } else { &right };
 
-                        // Check against 'which'
-                        let can_print = (file == 1 && print_left) || (file == 2 && print_right);
-                        match can_print {
-                            true  => f.row.field(field),
-                            false => "",
+                        // Is the file actually joined for this line?
+                        if (file == 1 && print_left) || (file == 2 && print_right) {
+                            // Is the field available for the line? Some lines may be missing
+                            // trailing fields.
+                            if field < f.row.num_fields() {
+                                f.row.field(field)
+                            }
+                            else {
+                                ""
+                            }
+                        }
+                        else {
+                            // use missing value
+                            &f.config.missing
                         }
                     },
                 }
             }).collect()
-        }
+        },
+        OutputOrder::Auto => panic!("invalid OutputOrder, this is a bug."),
     };
     output_fn(vals.join("\t"));
 

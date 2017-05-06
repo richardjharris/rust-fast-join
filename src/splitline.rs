@@ -23,6 +23,7 @@ impl SplitLine {
     }
 
     // Returns the fields
+    #[allow(dead_code)]
     fn fields(&self) -> Vec<&str> {
         self.fields.iter().map(|x| unsafe { &**x }).collect()
     }
