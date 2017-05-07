@@ -12,6 +12,7 @@ pub struct JoinConfig {
     pub right: JoinFileConfig,
     pub output: OutputOrder,
     pub output_fn: fn(String) -> (),
+    pub delim: char,
 }
 
 pub struct JoinFileConfig {

@@ -35,19 +35,25 @@ fn setup() -> Result<JoinConfig, Box<Error>> {
         (@arg rightField: -r --right +takes_value "Select the field to index from the right file")
         (@arg leftAll: -L --("left-all") "Print all lines from the left file, even if they don't match")
         (@arg rightAll: -R --("right-all") "Print all lines from the right file, even if they don't match")
-        (@arg outer: --("outer") "Print all lines from both files (equivalent to -LR)")
+        (@arg outer: --outer "Print all lines from both files (equivalent to -LR)")
         (@arg joinField: -j +takes_value "Select the key field for both left/right files")
         (@arg leftFile: +required "Left file")
         (@arg rightFile: +required "Right file")
         (@arg leftMissing: --("left-missing") +takes_value "When using --right-all, use this value as a placeholder for any missing left columns.")
         (@arg rightMissing: --("right-missing") +takes_value "When using --left-all, use this value as a placeholder for any missing right columns.")
-        (@arg output: -o --("output") +takes_value "Specify output ordering of fields (join syntax)")
+        (@arg output: -o --output +takes_value "Specify output ordering of fields (join syntax)")
+        (@arg delim: -t --delimiter +takes_value "Specify input/output column delimiter (default tab)")
     ).get_matches();
 
     let mut files = vec![];
     let dirs = vec!["left", "right"];
     let outer = args.is_present("outer");
     let default_join_field = args.value_of("joinField").unwrap_or("1");
+    let delim = args.value_of("delim").unwrap_or("\t");
+    if delim.len() != 1 {
+        return Err("delimiter must be a single character".into());
+    }
+    let delim = delim.chars().nth(0).unwrap();
 
     for dir in dirs {
         let filename = args.value_of(format!("{}File", dir)).unwrap();
@@ -68,6 +74,7 @@ fn setup() -> Result<JoinConfig, Box<Error>> {
         right: files.remove(0),
         output: output,
         output_fn: println,
+        delim: delim,
     })
 }
 
