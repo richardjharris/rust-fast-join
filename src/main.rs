@@ -53,7 +53,7 @@ fn setup() -> Result<JoinConfig, Box<Error>> {
     if delim.len() != 1 {
         return Err("delimiter must be a single character".into());
     }
-    let delim = delim.chars().nth(0).unwrap();
+    let delim = delim.to_owned();
 
     for dir in dirs {
         let filename = args.value_of(format!("{}File", dir)).unwrap();

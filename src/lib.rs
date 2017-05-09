@@ -12,7 +12,7 @@ pub struct JoinConfig {
     pub right: JoinFileConfig,
     pub output: OutputOrder,
     pub output_fn: fn(String) -> (),
-    pub delim: char,
+    pub delim: String,
 }
 
 pub struct JoinFileConfig {
@@ -38,8 +38,8 @@ pub enum OutputOrder {
     Explicit(Vec<OutputField>),
 }
 
-struct JoinFile {
-    config: JoinFileConfig,
+struct JoinFile<'a> {
+    config: &'a JoinFileConfig,
     lines: Box<LineIterator>,
     eof: bool,
     row: SplitLine,
@@ -48,8 +48,8 @@ struct JoinFile {
     num_fields: usize,
 }
 
-impl JoinFile {
-    pub fn new(config: JoinFileConfig) -> Result<JoinFile, Box<Error>> {
+impl<'a> JoinFile<'a> {
+    pub fn new(config: &JoinFileConfig) -> Result<JoinFile, Box<Error>> {
 
         fn open_file(filename: &str) -> Result<Box<io::Read>, Box<Error>> {
             Ok(match filename {
@@ -127,11 +127,9 @@ impl JoinFile {
     }
 } // impl JoinFile 
 
-pub fn join(config: JoinConfig) -> Result<(), Box<Error>> {
-    let left = &mut JoinFile::new(config.left)?;
-    let right = &mut JoinFile::new(config.right)?;
-    let mut output = config.output;
-    let output_fn = config.output_fn;
+pub fn join(mut config: JoinConfig) -> Result<(), Box<Error>> {
+    let left = &mut JoinFile::new(&config.left)?;
+    let right = &mut JoinFile::new(&config.right)?;
 
     if !left.first_fill() {
         panic!("No input found on left side");
@@ -142,7 +140,7 @@ pub fn join(config: JoinConfig) -> Result<(), Box<Error>> {
 
     // If using Auto output order, update it to Explicit now we know the
     // number of columns in each file.
-    if let OutputOrder::Auto = output {
+    if let OutputOrder::Auto = config.output {
         let mut v = vec![];
         v.push(OutputField::JoinField);
         let mut file = 1;
@@ -154,7 +152,7 @@ pub fn join(config: JoinConfig) -> Result<(), Box<Error>> {
             }
             file += 1;
         }
-        output = OutputOrder::Explicit(v);
+        config.output = OutputOrder::Explicit(v);
     }
 
     // XXX todo: check -r / -l settings here, and warn
@@ -164,18 +162,18 @@ pub fn join(config: JoinConfig) -> Result<(), Box<Error>> {
     while todo {
         match compare_keys(&left.row.keys(), &right.row.keys()) {
             Ordering::Equal => {
-                do_output(left, right, &output, output_fn, true, true);
+                do_output(&config, left, right, true, true);
                 todo = smart_refill(left, right);
             },
             Ordering::Less => {
                 if left.config.all && !left.printed {
-                    do_output(left, right, &output, output_fn, true, false);
+                    do_output(&config, left, right, true, false);
                 }
                 todo = left.refill();
             },
             Ordering::Greater => {
                 if right.config.all && !right.printed {
-                    do_output(left, right, &output, output_fn, false, true);
+                    do_output(&config, left, right, false, true);
                 }
                 todo = right.refill();
             },
@@ -184,21 +182,21 @@ pub fn join(config: JoinConfig) -> Result<(), Box<Error>> {
 
     // Print the last if all (normally this would happen on refill)
     if left.config.all && !left.printed {
-        do_output(left, right, &output, output_fn, true, false);
+        do_output(&config, left, right, true, false);
     }
     if right.config.all && !right.printed {
-        do_output(left, right, &output, output_fn, false, true);
+        do_output(&config, left, right, false, true);
     }
 
     // Finish off the remaining unpairable lines
     if !left.eof && left.config.all {
         while left.refill() {
-            do_output(left, right, &output, output_fn, true, false);
+            do_output(&config, left, right, true, false);
         }
     }
     else if !right.eof && right.config.all {
         while right.refill() {
-            do_output(left, right, &output, output_fn, false, true);
+            do_output(&config, left, right, false, true);
         }
     }
 
@@ -216,8 +214,7 @@ fn compare_keys(left: &Vec<&str>, right: &Vec<&str>) -> Ordering {
     result
 }
 
-fn do_output(left: &mut JoinFile, right: &mut JoinFile,
-             output: &OutputOrder, output_fn: fn(String) -> (),
+fn do_output(config: &JoinConfig, left: &mut JoinFile, right: &mut JoinFile,
              print_left: bool, print_right: bool) {
 
     if print_left {
@@ -229,7 +226,7 @@ fn do_output(left: &mut JoinFile, right: &mut JoinFile,
 
     let mut keys : Vec<&str> = if print_left { left.row.keys() } else { right.row.keys() };
 
-    let vals : Vec<&str> = match *output {
+    let vals : Vec<&str> = match config.output {
         OutputOrder::GnuDefault => {
             // Output join field, then remaining fields from left, then right
             // Output blank fields as appropriate
@@ -252,21 +249,22 @@ fn do_output(left: &mut JoinFile, right: &mut JoinFile,
                         v.append(&mut keys);
                     },
                     OutputField::FileField { file, field } => {
-                        let f = if file == 1 { &left } else { &right };
-
-                        v.push(if (file == 1 && print_left) || (file == 2 && print_right) {
-                            // File is joined, but might still be missing a trailing field
-                            if field < f.row.num_fields() {
-                                f.row.field(field)
+                        unsafe {
+                            let f : *const JoinFile = if file == 1 { left } else { right };
+                            v.push(if (file == 1 && print_left) || (file == 2 && print_right) {
+                                // File is joined, but might still be missing a trailing field
+                                if field < (*f).row.num_fields() {
+                                    (*f).row.field(field)
+                                }
+                                else {
+                                    ""
+                                }
                             }
                             else {
-                                ""
-                            }
+                                // File is not joined, so use missing value
+                                &(*f).config.missing
+                            });
                         }
-                        else {
-                            // File is not joined, so use missing value
-                            &f.config.missing
-                        });
                     },
                 }
             }
@@ -274,7 +272,7 @@ fn do_output(left: &mut JoinFile, right: &mut JoinFile,
         },
         OutputOrder::Auto => panic!("invalid OutputOrder, this is a bug."),
     };
-    output_fn(vals.join("\t"));
+    (config.output_fn)(vals.join(&config.delim));
 
 }
 
