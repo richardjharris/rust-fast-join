@@ -44,6 +44,9 @@ Similar to unix join(1) or gjoin, with the following differences:
  
  - -t for custom input/output separator
 
+ - --header to read header from input files, and include joined header
+   in output.
+
 Things to think about adding
 ----------------------------
 
@@ -51,8 +54,12 @@ Things to think about adding
  * -i ignorecase
  * -v to do a not-exists join
  * --check-order
- * --header
+ * Support for named fields in -o, -r/-l/-j
 
  Trailing newlines: GNU join behaviour is to consider a trailing newline to be
  a real field, with no columns. It outputs an empty line at the end! We do the
  same, except currently splitline will panic :P
+
+ There are many panics, e.g. if the header column count doesn't match the
+ next line (which is used for -o auto). Possibly -o auto could use the header
+ line...
