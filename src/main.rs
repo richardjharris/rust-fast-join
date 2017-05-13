@@ -67,7 +67,7 @@ fn setup() -> Result<JoinConfig, Box<Error>> {
         files.push( JoinFileConfig { filename: filename.into(), field: field, all: all, missing: missing } );
     }
 
-    let output = args.value_of("output").unwrap_or("gnudefault");
+    let output = args.value_of("output").unwrap_or("auto");
     let output = parse_output_fields(output)?;
 
     // return the two elements as a tuple

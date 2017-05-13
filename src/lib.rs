@@ -171,6 +171,11 @@ pub fn join(mut config: JoinConfig) -> Result<(), Box<Error>> {
         config.output = OutputOrder::Explicit(v);
     }
 
+    // Now we've normalized the output order, print the header
+    if config.has_header {
+        do_header_output(&config, left, right);
+    }
+
     // XXX todo: check -r / -l settings here, and warn
 
     // Loop through the inputs
@@ -228,6 +233,33 @@ fn compare_keys(left: &Vec<&str>, right: &Vec<&str>) -> Ordering {
         }
     }
     result
+}
+
+fn do_header_output(config: &JoinConfig, left: &JoinFile, right: &JoinFile) {
+    if let OutputOrder::Explicit(ref fields) = config.output {
+        // This function is only called if headers are set.
+        let left_header = left.header.as_ref().unwrap();
+        let right_header = right.header.as_ref().unwrap();
+
+        let mut cols : Vec<&str> = vec![];
+        for item in fields {
+            match *item {
+                OutputField::JoinField => {
+                    for index in &left.row.key_fields {
+                        cols.push( left_header[*index].as_str() );  
+                    }
+                },
+                OutputField::FileField { file, field } => {
+                    let f = if file == 1 { left_header } else { right_header };
+                    cols.push(f[field].as_str());
+                },
+            }
+        }
+        (config.output_fn)(cols.join(&config.delim));
+    }
+    else {
+        panic!("gnudefault order doesn't support --header yet");
+    }
 }
 
 fn do_output(config: &JoinConfig, left: &mut JoinFile, right: &mut JoinFile,
