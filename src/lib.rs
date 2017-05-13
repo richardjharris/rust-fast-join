@@ -249,9 +249,9 @@ fn do_output(config: &JoinConfig, left: &mut JoinFile, right: &mut JoinFile,
                         v.append(&mut keys);
                     },
                     OutputField::FileField { file, field } => {
-                        unsafe {
-                            let f : *const JoinFile = if file == 1 { left } else { right };
-                            v.push(if (file == 1 && print_left) || (file == 2 && print_right) {
+                        let f : *const JoinFile = if file == 1 { left } else { right };
+                        v.push(unsafe {
+                            if (file == 1 && print_left) || (file == 2 && print_right) {
                                 // File is joined, but might still be missing a trailing field
                                 if field < (*f).row.num_fields() {
                                     (*f).row.field(field)
@@ -263,8 +263,8 @@ fn do_output(config: &JoinConfig, left: &mut JoinFile, right: &mut JoinFile,
                             else {
                                 // File is not joined, so use missing value
                                 &(*f).config.missing
-                            });
-                        }
+                            }
+                        });
                     },
                 }
             }
