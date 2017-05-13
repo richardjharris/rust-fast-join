@@ -63,3 +63,36 @@ Things to think about adding
  There are many panics, e.g. if the header column count doesn't match the
  next line (which is used for -o auto). Possibly -o auto could use the header
  line...
+
+New design?
+-----------
+
+The use of structs to hold user arguments which get turned into runtime args
+is a bit hacky. A builder pattern might work better...
+
+ let r = RJoin::new( leftFile, rightFile );
+ r.set_output(output);  # headers already read
+ r.set_key(0, '1'); 
+
+But delim/header have to be set for set_output to work properly... tricky
+
+Divide args into: file reading (header, delim, filenames)
+  and joining?
+  and output?
+
+  FileReader (x2) -> Joiner -> Output
+
+For example
+
+ let left = FileReader(filename, delim, header);
+ let right = FileReader(filename, delim, header);
+ let join = Joiner(left, right);
+ join.set_all(0, true);
+ join.set_missing(0, '[Expired]');
+ join.set_keys(0, '1,2');
+ let output = ColumnOutput(delim, '1.1,2.1', to_stdout);
+ join.do_join(output);
+
+This enforces the correct ordering. And no longer need to import a million
+things. It's the object's responsibility to parse stuff. I suppose we could
+parse stuff with the help of the left/right objects, same with set_keys.
