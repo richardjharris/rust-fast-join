@@ -41,13 +41,14 @@ Similar to unix join(1) or gjoin, with the following differences:
    relationship data, and all blank columns in both input files.
  
  - Performance is roughly comparable with GNU join.
+ 
+ - -t for custom input/output separator
 
 Things to think about adding
 ----------------------------
 
  * -e EMPTY for replacing missing input fields (useful?)
  * -i ignorecase
- * -t input/output separator
  * -v to do a not-exists join
  * --check-order
  * --header

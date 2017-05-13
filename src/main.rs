@@ -43,11 +43,13 @@ fn setup() -> Result<JoinConfig, Box<Error>> {
         (@arg rightMissing: --("right-missing") +takes_value "When using --left-all, use this value as a placeholder for any missing right columns.")
         (@arg output: -o --output +takes_value "Specify output ordering of fields (join syntax)")
         (@arg delim: -t --delimiter +takes_value "Specify input/output column delimiter (default tab)")
+        (@arg header: -H --header "Indicate that the input files contain a header line (will be output)")
     ).get_matches();
 
     let mut files = vec![];
     let dirs = vec!["left", "right"];
     let outer = args.is_present("outer");
+    let has_header = args.is_present("header");
     let default_join_field = args.value_of("joinField").unwrap_or("1");
     let delim = args.value_of("delim").unwrap_or("\t");
     if delim.len() != 1 {
@@ -75,6 +77,7 @@ fn setup() -> Result<JoinConfig, Box<Error>> {
         output: output,
         output_fn: println,
         delim: delim,
+        has_header: has_header,
     })
 }
 

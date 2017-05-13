@@ -13,6 +13,7 @@ pub struct JoinConfig {
     pub output: OutputOrder,
     pub output_fn: fn(String) -> (),
     pub delim: String,
+    pub has_header: bool,
 }
 
 pub struct JoinFileConfig {
@@ -46,6 +47,7 @@ struct JoinFile<'a> {
     printed: bool,
     next_row: SplitLine,
     num_fields: usize,
+    header: Option<Vec<String>>,
 }
 
 impl<'a> JoinFile<'a> {
@@ -70,8 +72,17 @@ impl<'a> JoinFile<'a> {
                 row: SplitLine::new("".into(), '\t', vec![0]),
                 next_row: SplitLine::new("".into(), '\t', vec![0]),
                 num_fields: 0,
+                header: None,
             }
         })
+    }
+
+    fn read_header(&mut self, delim: &str) -> () {
+        self.header = Some(match self.lines.next() {
+            Some(Ok(line)) => { line.split(&delim).map(|x| x.to_owned()).collect() },
+            Some(Err(_)) => { panic!("read error") },
+            None => { panic!("no header line") },
+        });
     }
 
     // Read first two lines into row/next_row. Returns false if file is empty.
@@ -130,6 +141,11 @@ impl<'a> JoinFile<'a> {
 pub fn join(mut config: JoinConfig) -> Result<(), Box<Error>> {
     let left = &mut JoinFile::new(&config.left)?;
     let right = &mut JoinFile::new(&config.right)?;
+
+    if config.has_header {
+        left.read_header(&config.delim);
+        right.read_header(&config.delim);
+    }
 
     if !left.first_fill() {
         panic!("No input found on left side");
