@@ -1,5 +1,4 @@
-rjoin - rico's join
--------------------
+# rjoin - rico's join
 
 Similar to unix join(1) or gjoin, with the following differences:
 
