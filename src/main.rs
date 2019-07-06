@@ -5,7 +5,7 @@ use std::process;
 use std::error::Error;
 use std::io::Write;
 
-use rjoin::{JoinFileConfig, JoinConfig, OutputField, OutputOrder};
+use rjoin::{JoinFileConfig, JoinConfig, OutputField, OutputOrder, KeyField, KeyFields};
 
 fn main() {
     let mut stderr = std::io::stderr();
@@ -63,8 +63,13 @@ fn setup() -> Result<JoinConfig, Box<Error>> {
         let missing = args.value_of(format!("{}Missing", dir)).unwrap_or("").to_owned();
 
         let field = args.value_of(format!("{}Field", dir)).unwrap_or(default_join_field);
-        let field = parse_key_fields(field)?;
-        files.push( JoinFileConfig { filename: filename.into(), field: field, all: all, missing: missing } );
+        let key_fields = parse_key_fields(field)?;
+        files.push( JoinFileConfig {
+            filename: filename.into(),
+            key_fields: key_fields,
+            all: all,
+            missing: missing,
+        } );
     }
 
     let output = args.value_of("output").unwrap_or("auto");
@@ -82,19 +87,45 @@ fn setup() -> Result<JoinConfig, Box<Error>> {
 }
 
 // Parse key fields (XXX re-use code from parse_output_fields)
-fn parse_key_fields(arg: &str) -> Result<Vec<usize>, Box<Error>> {
+fn parse_key_fields(arg: &str) -> Result<KeyFields, Box<Error>> {
     let mut fields : Vec<_> = vec![];
     
     for item in arg.split(',') {
-        let mut field = item.trim().parse::<usize>()?;
-        if field < 1 {
-            return Err("output field column number must be greater than 0".into());
+        if let Ok(mut field) = item.trim().parse::<usize>() {
+            if field < 1 {
+                return Err("output field column number must be greater than 0".into());
+            }
+            field -= 1;
+            fields.push(KeyField::Indexed(field));
         }
-        field -= 1;
-        fields.push(field);
+        else {
+            // Assume it's a named field
+            let item = item.trim().to_owned();
+            fields.push(KeyField::Named(item));
+        }
     }
     
     Ok(fields)
+}
+
+// Parse the file number (1, 2, left, right, l or r)
+fn parse_output_field_file(arg: &str) -> Result<usize, Box<Error>> {
+    let arg = arg.trim().to_lowercase();
+    if let Ok(index) = arg.parse::<usize>() {
+        if index != 1 && index != 2 {
+            return Err("output field file number must be either 1 or 2".into());
+        }
+        return Ok(index);
+    }
+    else if ["l", "left"].iter().any(|x| *x == arg) {
+        return Ok(1);
+    }
+    else if ["r", "right"].iter().any(|x| *x == arg) {
+        return Ok(2);
+    }
+    else {
+        return Err("invalid output field".into());
+    }
 }
 
 // Parse a string like 'auto' or '0,1.1,1.2,2.1' into an OutputOrder struct.
@@ -120,10 +151,9 @@ fn parse_output_fields(arg: &str) -> Result<OutputOrder, Box<Error>> {
             if nums.len() != 2 {
                 return Err("output field format must be '0' or 'x.y' where x is the file number and y is the field number".into());
             }
-            let file = nums[0].parse::<usize>()?;
-            if file != 1 && file != 2 {
-                return Err("output field file number must be either 1 or 2".into());
-            }
+
+            let file = parse_output_field_file(nums[0])?;
+
             if let Ok(field) = nums[1].parse::<usize>() {
                 if field < 1 {
                     return Err("output field column number must be greater than 0".into());
@@ -150,8 +180,8 @@ fn parse_output_fields(arg: &str) -> Result<OutputOrder, Box<Error>> {
                     }
                 }
                 else {
-                    let err = format!("Field specification '{}' is invalid", nums[1]);
-                    return Err(err.into());
+                    // Assume it's a named field
+                    fields.push(OutputField::NamedFileField { file: file, field: nums[1].to_owned() });
                 }
             }
         }

@@ -16,9 +16,16 @@ pub struct JoinConfig {
     pub has_header: bool,
 }
 
+#[derive(Debug,Clone)]
+pub enum KeyField {
+    Indexed(usize),
+    Named(String),
+}
+pub type KeyFields = Vec<KeyField>;
+
 pub struct JoinFileConfig {
     pub all: bool,
-    pub field: Vec<usize>,
+    pub key_fields: KeyFields,
     pub filename: String,
     pub missing: String,
 }
@@ -28,6 +35,7 @@ pub enum OutputField {
     JoinField,
     // File should be 1 or 2; field should be 0-indexed
     FileField { file: usize, field: usize },
+    NamedFileField { file: usize, field: String },
 }
 
 #[derive(Debug)]
@@ -48,6 +56,7 @@ struct JoinFile<'a> {
     next_row: SplitLine,
     num_fields: usize,
     header: Option<Vec<String>>,
+    key_fields: Vec<usize>,
 }
 
 impl<'a> JoinFile<'a> {
@@ -69,10 +78,11 @@ impl<'a> JoinFile<'a> {
                 lines: iter,
                 eof: false,
                 printed: false,
-                row: SplitLine::new("".into(), '\t', vec![0]),
-                next_row: SplitLine::new("".into(), '\t', vec![0]),
+                row: SplitLine::new("".into(), '\t', vec![]),
+                next_row: SplitLine::new("".into(), '\t', vec![]),
                 num_fields: 0,
                 header: None,
+                key_fields: vec![],
             }
         })
     }
@@ -124,7 +134,8 @@ impl<'a> JoinFile<'a> {
     fn read_line(&mut self) -> bool {
         match self.lines.next() {
             Some(Ok(line)) => {
-                self.next_row = SplitLine::new(line, '\t', self.config.field.clone());
+                // XXX It's not good to be cloning this over and over??
+                self.next_row = SplitLine::new(line, '\t', self.key_fields.clone());
                 true
             },
             Some(Err(_)) => {
@@ -139,8 +150,8 @@ impl<'a> JoinFile<'a> {
 } // impl JoinFile 
 
 pub fn join(mut config: JoinConfig) -> Result<(), Box<Error>> {
-    let left = &mut JoinFile::new(&config.left)?;
-    let right = &mut JoinFile::new(&config.right)?;
+    let mut left = &mut JoinFile::new(&config.left)?;
+    let mut right = &mut JoinFile::new(&config.right)?;
 
     if config.has_header {
         left.read_header(&config.delim);
@@ -171,12 +182,49 @@ pub fn join(mut config: JoinConfig) -> Result<(), Box<Error>> {
         config.output = OutputOrder::Explicit(v);
     }
 
-    // Now we've normalized the output order, print the header
+    // This ugly code exists to convert named fields to indexes before
+    // running. Only works if we have a header
     if config.has_header {
+        fn lookup_index(s: &str, v: Vec<String>) -> usize {
+            match v.iter().position(|i| *i == s) {
+                Some(index) => index,
+                None => panic!("named column '{}' not found", s),
+            }
+        }
+
+        // Convert named key/output fields to column indexes
+        for f in vec![&left, &right] {
+            for key in f.config.key_fields {
+                if let KeyField::Named(s) = key {
+                    key = KeyField::Indexed( lookup_index(&s, f.header.unwrap()) );
+                }
+            }
+        }
+        if let OutputOrder::Explicit(cols) = config.output {
+            for col in cols {
+                if let OutputField::NamedFileField { file, field } = col {
+                    let f : *const JoinFile = if file == 1 { left } else { right };
+                    col = OutputField::FileField {
+                        file: file,
+                        field: lookup_index(&field, unsafe { (*f).header.unwrap() }),
+                    };
+                }
+            }
+        }
+
+        // Now we've normalized the output order, print the header
         do_header_output(&config, left, right);
     }
 
-    // XXX todo: check -r / -l settings here, and warn
+    // Populate f.key_fields (ugly...)
+    for f in vec![&mut left, &mut right] {
+        f.key_fields = f.config.key_fields.iter().map(|x| {
+            match *x {
+                KeyField::Indexed(s) => s,
+                KeyField::Named(_) => panic!("named fields require --header"),
+            }
+        }).collect();
+    }
 
     // Loop through the inputs
     let mut todo = true;
@@ -253,6 +301,10 @@ fn do_header_output(config: &JoinConfig, left: &JoinFile, right: &JoinFile) {
                     let f = if file == 1 { left_header } else { right_header };
                     cols.push(f[field].as_str());
                 },
+                OutputField::NamedFileField { ref field, .. } => {
+                    //XXX should this appear at all?
+                    cols.push(field.as_str());
+                },
             }
         }
         (config.output_fn)(cols.join(&config.delim));
@@ -313,6 +365,9 @@ fn do_output(config: &JoinConfig, left: &mut JoinFile, right: &mut JoinFile,
                                 &(*f).config.missing
                             }
                         });
+                    },
+                    OutputField::NamedFileField { .. } => {
+                        panic!("should have been converted to FileField");
                     },
                 }
             }
